@@ -34,68 +34,66 @@ def dashboard():
         f_status = ""
     f_niche = request.args.get("niche", "")
     f_subniche = request.args.get("subniche", "")
+    f_agency = request.args.get("agency", "")
     since = _since(days)
 
     conn = db.connect()
     try:
-        base = """
-            FROM sponsorships s
-            JOIN videos v ON v.id = s.video_ref
-            JOIN channels c ON c.id = v.channel_ref
-            WHERE v.upload_date >= ?
-        """
-        args = [since]
-        if f_brand:
-            base += " AND s.brand_key = ?"
-            args.append(f_brand)
-        if f_creator:
-            base += " AND c.id = ?"
-            args.append(int(f_creator))
-        if f_status:
-            base += " AND c.status = ?"
-            args.append(f_status)
-        if f_niche:
-            base += " AND c.niche = ?"
-            args.append(f_niche)
-        if f_subniche:
-            base += " AND c.subniche = ?"
-            args.append(f_subniche)
+        # One set of filter conditions drives every widget on the page.
+        # The time floor is parameterized so the week grid can use its own window.
+        cond = " AND ".join(
+            ["v.upload_date >= ?"]
+            + (["s.brand_key = ?"] if f_brand else [])
+            + (["c.id = ?"] if f_creator else [])
+            + (["c.status = ?"] if f_status else [])
+            + (["c.niche = ?"] if f_niche else [])
+            + (["c.subniche = ?"] if f_subniche else [])
+            + (["c.agency = ?"] if f_agency else [])
+        )
+
+        def cargs(time_floor):
+            out = [time_floor]
+            if f_brand: out.append(f_brand)
+            if f_creator: out.append(int(f_creator))
+            if f_status: out.append(f_status)
+            if f_niche: out.append(f_niche)
+            if f_subniche: out.append(f_subniche)
+            if f_agency: out.append(f_agency)
+            return out
+
+        base = (
+            " FROM sponsorships s JOIN videos v ON v.id = s.video_ref"
+            " JOIN channels c ON c.id = v.channel_ref WHERE " + cond
+        )
 
         rows = conn.execute(
             "SELECT s.brand, s.brand_key, s.evidence, v.title, v.url, v.upload_date,"
             " c.name AS creator, c.id AS creator_id "
             + base
             + " ORDER BY v.upload_date DESC, s.id DESC LIMIT 500",
-            args,
+            cargs(since),
         ).fetchall()
 
-        # brand x creator counts for the heatmap (respects the time filter only)
+        # brand x creator counts for the heatmap (all active filters apply)
         pairs = conn.execute(
             "SELECT s.brand_key, MIN(s.brand) AS brand, c.name AS creator, c.id AS creator_id,"
-            " COUNT(*) AS n "
-            "FROM sponsorships s JOIN videos v ON v.id = s.video_ref"
-            " JOIN channels c ON c.id = v.channel_ref"
-            " WHERE v.upload_date >= ?"
-            " GROUP BY s.brand_key, c.id ORDER BY n DESC",
-            (since,),
+            " COUNT(*) AS n " + base + " GROUP BY s.brand_key, c.id ORDER BY n DESC",
+            cargs(since),
         ).fetchall()
 
-        # last-7-days grid (always the trailing week, independent of filter)
+        # last-7-days grid: trailing week window, same non-time filters
         week_start = (dt.date.today() - dt.timedelta(days=6)).isoformat()
         week = conn.execute(
             "SELECT s.brand, v.title, v.url, v.upload_date, c.name AS creator, c.status "
-            "FROM sponsorships s JOIN videos v ON v.id = s.video_ref"
-            " JOIN channels c ON c.id = v.channel_ref"
-            " WHERE v.upload_date >= ? ORDER BY c.name, v.upload_date",
-            (week_start,),
+            + base + " ORDER BY c.name, v.upload_date",
+            cargs(week_start),
         ).fetchall()
 
         stats = {
-            "week": conn.execute(
-                "SELECT COUNT(*) FROM sponsorships s JOIN videos v ON v.id=s.video_ref"
-                " WHERE v.upload_date >= ?", (week_start,)
+            "week": conn.execute("SELECT COUNT(*)" + base, cargs(week_start)).fetchone()[0],
+            "brands": conn.execute(
+                "SELECT COUNT(DISTINCT s.brand_key)" + base, cargs(since)
             ).fetchone()[0],
-            "brands": conn.execute("SELECT COUNT(DISTINCT brand_key) FROM sponsorships").fetchone()[0],
             "creators": conn.execute("SELECT COUNT(*) FROM channels").fetchone()[0],
             "videos": conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0],
         }
@@ -117,6 +115,11 @@ def dashboard():
                 "SELECT DISTINCT subniche FROM channels WHERE subniche IS NOT NULL AND subniche != ''"
                 + (" AND niche = ?" if f_niche else "") + " ORDER BY subniche",
                 (f_niche,) if f_niche else (),
+            )
+        ]
+        all_agencies = [
+            r["agency"] for r in conn.execute(
+                "SELECT DISTINCT agency FROM channels WHERE agency IS NOT NULL AND agency != '' ORDER BY agency"
             )
         ]
     finally:
@@ -144,8 +147,8 @@ def dashboard():
         "max": max((p["n"] for p in pairs if p["brand_key"] in top_keys), default=0),
     }
 
-    # Week grid: creator rows x 7 day columns of brand chips.
-    day_list = [(dt.date.today() - dt.timedelta(days=6 - i)) for i in range(7)]
+    # Week grid: creator rows x 7 day columns of brand chips, today first.
+    day_list = [(dt.date.today() - dt.timedelta(days=i)) for i in range(7)]
     week_grid = {}
     for r in week:
         week_grid.setdefault(r["creator"], {d.isoformat(): [] for d in day_list})
@@ -158,6 +161,7 @@ def dashboard():
         week_grid=week_grid, day_list=day_list,
         ranges=RANGES, days=days, f_brand=f_brand, f_creator=f_creator, f_status=f_status,
         f_niche=f_niche, f_subniche=f_subniche, all_niches=all_niches, all_subniches=all_subniches,
+        f_agency=f_agency, all_agencies=all_agencies,
         all_brands=all_brands, all_creators=all_creators, closed_names=closed_names,
         scan=scraper.STATE,
     )
@@ -178,9 +182,14 @@ def channels():
                 "SELECT DISTINCT niche FROM channels WHERE niche IS NOT NULL AND niche != '' ORDER BY niche"
             )
         ]
+        agencies = [
+            r["agency"] for r in conn.execute(
+                "SELECT DISTINCT agency FROM channels WHERE agency IS NOT NULL AND agency != '' ORDER BY agency"
+            )
+        ]
     finally:
         conn.close()
-    return render_template("channels.html", chans=chans, niches=niches, scan=scraper.STATE)
+    return render_template("channels.html", chans=chans, niches=niches, agencies=agencies, scan=scraper.STATE)
 
 
 @app.route("/channels/add", methods=["POST"])
@@ -215,17 +224,72 @@ def channels_import():
 def channels_niche(cid):
     niche = request.form.get("niche", "").strip()[:40]
     subniche = request.form.get("subniche", "").strip()[:40]
+    agency = request.form.get("agency", "").strip()[:60]
     conn = db.connect()
     try:
         conn.execute(
-            "UPDATE channels SET niche = ?, subniche = ? WHERE id = ?",
-            (niche or None, subniche or None, cid),
+            "UPDATE channels SET niche = ?, subniche = ?, agency = ? WHERE id = ?",
+            (niche or None, subniche or None, agency or None, cid),
         )
         conn.commit()
     finally:
         conn.close()
-    flash("Niche updated.", "ok")
+    flash("Creator details updated.", "ok")
     return redirect(request.referrer or url_for("channels"))
+
+
+@app.route("/brands")
+def brands():
+    conn = db.connect()
+    try:
+        known = conn.execute(
+            "SELECT b.*, "
+            " (SELECT COUNT(*) FROM sponsorships s WHERE s.brand_key = b.brand_key) AS hits"
+            " FROM brands b ORDER BY b.name COLLATE NOCASE"
+        ).fetchall()
+        suggestions = conn.execute(
+            "SELECT s.brand_key, MIN(s.brand) AS name, COUNT(*) AS n,"
+            " COUNT(DISTINCT c.id) AS creators, MAX(v.upload_date) AS last_seen"
+            " FROM sponsorships s JOIN videos v ON v.id = s.video_ref"
+            " JOIN channels c ON c.id = v.channel_ref"
+            " WHERE s.brand_key NOT IN (SELECT brand_key FROM brands)"
+            " GROUP BY s.brand_key ORDER BY n DESC, last_seen DESC"
+        ).fetchall()
+    finally:
+        conn.close()
+    return render_template("brands.html", known=known, suggestions=suggestions, scan=scraper.STATE)
+
+
+@app.route("/brands/import", methods=["POST"])
+def brands_import():
+    f = request.files.get("file")
+    if not f or not f.filename:
+        flash("No file selected.", "err")
+        return redirect(url_for("brands"))
+    added, skipped = db.import_brand_lines(f.read().decode("utf-8", errors="replace"))
+    flash(f"Imported {len(added)} brand(s); skipped {len(skipped)} (already known/invalid).", "ok")
+    return redirect(url_for("brands"))
+
+
+@app.route("/brands/mark", methods=["POST"])
+def brands_mark():
+    name = request.form.get("name", "").strip()
+    if name:
+        db.import_brand_lines(name)
+        flash(f"“{name}” marked as known — it won't be suggested again.", "ok")
+    return redirect(url_for("brands"))
+
+
+@app.route("/brands/<int:bid>/delete", methods=["POST"])
+def brands_delete(bid):
+    conn = db.connect()
+    try:
+        conn.execute("DELETE FROM brands WHERE id = ?", (bid,))
+        conn.commit()
+    finally:
+        conn.close()
+    flash("Brand removed from the known list — it may reappear as a suggestion.", "ok")
+    return redirect(url_for("brands"))
 
 
 @app.route("/channels/<int:cid>/delete", methods=["POST"])

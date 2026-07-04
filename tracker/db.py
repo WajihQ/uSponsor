@@ -16,7 +16,15 @@ CREATE TABLE IF NOT EXISTS channels (
     last_scanned TEXT,
     status      TEXT NOT NULL DEFAULT 'prospect', -- 'prospect' | 'closed'
     niche       TEXT,                             -- e.g. 'Tech'
-    subniche    TEXT                              -- e.g. 'Mini PCs'
+    subniche    TEXT,                             -- e.g. 'Mini PCs'
+    agency      TEXT                              -- managing agency, if repped elsewhere
+);
+
+CREATE TABLE IF NOT EXISTS brands (
+    id        INTEGER PRIMARY KEY,
+    name      TEXT NOT NULL,
+    brand_key TEXT UNIQUE NOT NULL,               -- same normalization as sponsorships
+    added_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS videos (
@@ -61,30 +69,40 @@ def init_db():
         if "niche" not in cols:
             conn.execute("ALTER TABLE channels ADD COLUMN niche TEXT")
             conn.execute("ALTER TABLE channels ADD COLUMN subniche TEXT")
+        if "agency" not in cols:
+            conn.execute("ALTER TABLE channels ADD COLUMN agency TEXT")
+        # purge false-positive "brands" stored by older detector versions
+        conn.execute(
+            "DELETE FROM sponsorships WHERE brand_key IN"
+            " ('http', 'https', 'www', 'link', 'checkout', 'thecheckout', 'cart', 'thecart')"
+            " OR brand_key LIKE '%checkout'"
+        )
 
 
-def add_channel(url, niche=None, subniche=None):
-    """Insert a channel by URL/handle, with optional niche tags.
+def add_channel(url, niche=None, subniche=None, agency=None):
+    """Insert a channel by URL/handle, with optional niche/agency tags.
 
-    If the channel already exists, empty niche/sub-niche fields are filled
-    from the arguments (hand-set values are never overwritten). Returns
-    (status, info) where status is 'added' | 'updated' | 'duplicate' | 'invalid'.
+    If the channel already exists, empty niche/sub-niche/agency fields are
+    filled from the arguments (hand-set values are never overwritten).
+    Returns (status, info): 'added' | 'updated' | 'duplicate' | 'invalid'.
     """
     url = normalize_channel_url(url)
     if not url:
         return "invalid", "not a recognizable YouTube channel link or @handle"
-    niche = (niche or "").strip()[:40] or None
-    subniche = (subniche or "").strip()[:40] or None
+    fields = {
+        "niche": (niche or "").strip()[:40] or None,
+        "subniche": (subniche or "").strip()[:40] or None,
+        "agency": (agency or "").strip()[:60] or None,
+    }
     with connect() as conn:
         row = conn.execute(
-            "SELECT id, niche, subniche FROM channels WHERE input_url = ?", (url,)
+            "SELECT id, niche, subniche, agency FROM channels WHERE input_url = ?", (url,)
         ).fetchone()
         if row:
             sets, vals = [], []
-            if niche and not row["niche"]:
-                sets.append("niche = ?"); vals.append(niche)
-            if subniche and not row["subniche"]:
-                sets.append("subniche = ?"); vals.append(subniche)
+            for col, val in fields.items():
+                if val and not row[col]:
+                    sets.append(f"{col} = ?"); vals.append(val)
             if sets:
                 conn.execute(
                     f"UPDATE channels SET {', '.join(sets)} WHERE id = ?", (*vals, row["id"])
@@ -92,8 +110,8 @@ def add_channel(url, niche=None, subniche=None):
                 return "updated", url
             return "duplicate", "already in the list"
         conn.execute(
-            "INSERT INTO channels (input_url, niche, subniche) VALUES (?, ?, ?)",
-            (url, niche, subniche),
+            "INSERT INTO channels (input_url, niche, subniche, agency) VALUES (?, ?, ?, ?)",
+            (url, fields["niche"], fields["subniche"], fields["agency"]),
         )
     return "added", url
 
@@ -118,31 +136,73 @@ def normalize_channel_url(raw):
     return None
 
 
-def import_channel_lines(text):
-    """Parse a .txt/.csv blob into channels, with optional niche columns.
+_HEADER_COLS = {
+    "niche": "niche",
+    "subniche": "subniche", "sub-niche": "subniche", "sub niche": "subniche",
+    "agency": "agency", "management": "agency", "mgmt": "agency",
+}
 
-    A row with exactly one channel link may carry up to two extra cells
-    after it — niche and sub-niche (e.g. "youtube.com/@x, Tech, Mini PCs").
-    Rows with several links import each link plainly. On re-import of an
-    existing channel, blank niche fields get filled from the file; values
-    already set are left alone. Returns (added, updated, skipped) lists.
+
+def import_channel_lines(text):
+    """Parse a .txt/.csv blob into channels, with optional niche/agency columns.
+
+    Without a header row, cells after a row's (single) channel link are read
+    positionally as niche, sub-niche, agency. A header row (e.g.
+    "channel,agency" or "link,niche,sub-niche,agency") maps columns by name
+    instead, so an agency-only file doesn't need niche placeholders. Rows
+    with several links import each link plainly. On re-import of an existing
+    channel, blank fields get filled from the file; values already set are
+    left alone. Returns (added, updated, skipped) lists.
     """
     added, updated, skipped = [], [], []
-    for line in text.splitlines():
-        cells = [c.strip() for c in line.replace(";", ",").split(",")]
-        cells = [c for c in cells if c]
-        links = [(i, c) for i, c in enumerate(cells) if normalize_channel_url(c)]
+    colmap = None  # header name -> column index
+    for lineno, line in enumerate(text.splitlines()):
+        raw_cells = [c.strip().strip('"') for c in line.replace(";", ",").split(",")]
+        cells = [c for c in raw_cells if c]
+        links = [(i, c) for i, c in enumerate(raw_cells) if normalize_channel_url(c)]
         if not links:
-            continue  # header rows, comments, junk
+            if lineno == 0 and cells:  # maybe a header row: map named columns
+                found = {
+                    _HEADER_COLS[c.lower()]: i
+                    for i, c in enumerate(raw_cells)
+                    if c.lower() in _HEADER_COLS
+                }
+                if found:
+                    colmap = found
+            continue
         if len(links) == 1:
             i, link = links[0]
-            extras = cells[i + 1 : i + 3]  # niche, sub-niche
-            niche = extras[0] if extras else None
-            subniche = extras[1] if len(extras) > 1 else None
-            results = [(link, add_channel(link, niche, subniche))]
+            if colmap:
+                get = lambda f: raw_cells[colmap[f]] if f in colmap and colmap[f] < len(raw_cells) else None
+                fields = {f: get(f) for f in ("niche", "subniche", "agency")}
+            else:
+                extras = [c for c in raw_cells[i + 1 :] if c][:3]
+                fields = dict(zip(("niche", "subniche", "agency"), extras + [None] * 3))
+            results = [(link, add_channel(link, fields["niche"], fields["subniche"], fields["agency"]))]
         else:
             results = [(link, add_channel(link)) for _, link in links]
         for link, (status, info) in results:
             bucket = {"added": added, "updated": updated}.get(status, skipped)
             bucket.append((link, info))
     return added, updated, skipped
+
+
+def import_brand_lines(text):
+    """Import CRM brand names, one or more per line. Returns (added, skipped)."""
+    from .detector import brand_key
+    added, skipped = [], []
+    with connect() as conn:
+        for line in text.splitlines():
+            for cell in line.replace(";", ",").split(","):
+                name = cell.strip().strip('"')
+                if not name or name.lower() in ("brand", "brands", "name", "brand name"):
+                    continue  # blank or header
+                key = brand_key(name)
+                if len(key) < 2:
+                    skipped.append(name)
+                    continue
+                cur = conn.execute(
+                    "INSERT OR IGNORE INTO brands (name, brand_key) VALUES (?, ?)", (name, key)
+                )
+                (added if cur.rowcount else skipped).append(name)
+    return added, skipped

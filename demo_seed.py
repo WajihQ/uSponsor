@@ -20,13 +20,25 @@ if os.path.exists(db.DB_PATH):
     os.remove(db.DB_PATH)
 db.init_db()
 
+NICHES = {
+    "Aman Tech": ("Tech", "Mini PCs", None),
+    "PixelForge": ("Tech", "PC Hardware", "BossMgmtGrp"),
+    "GameDeck": ("Gaming", "Handhelds", None),
+    "ByteSized": ("Tech", None, "BossMgmtGrp"),
+    "FrameRate": ("Gaming", "FPS", None),
+}
+
 conn = db.connect()
 for i, name in enumerate(CREATORS):
+    niche, subniche, agency = NICHES[name]
     conn.execute(
-        "INSERT INTO channels (input_url, channel_id, name, last_scanned)"
-        " VALUES (?, ?, ?, datetime('now'))",
-        (f"https://www.youtube.com/@demo{i}", f"UCdemo{i:018d}", name),
+        "INSERT INTO channels (input_url, channel_id, name, last_scanned, niche, subniche, agency)"
+        " VALUES (?, ?, ?, datetime('now'), ?, ?, ?)",
+        (f"https://www.youtube.com/@demo{i}", f"UCdemo{i:018d}", name, niche, subniche, agency),
     )
+for crm in ("NordVPN", "Squarespace"):
+    from tracker.detector import brand_key as bk
+    conn.execute("INSERT INTO brands (name, brand_key) VALUES (?, ?)", (crm, bk(crm)))
 
 today = dt.date.today()
 events = PAIRS + [(random.choice(BRANDS), random.choice(CREATORS)) for _ in range(40)]

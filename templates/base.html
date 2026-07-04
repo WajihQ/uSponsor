@@ -62,6 +62,7 @@ td { padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top; 
   <span class="logo">uSponsor</span>
   <nav>
     <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">Dashboard</a>
+    <a href="{{ url_for('brands') }}" class="{{ 'active' if request.endpoint == 'brands' }}">Brands</a>
     <a href="{{ url_for('channels') }}" class="{{ 'active' if request.endpoint == 'channels' }}">Channels</a>
   </nav>
   <span class="spacer"></span>

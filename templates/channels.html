@@ -34,9 +34,10 @@ td form { display:inline-block; margin-right:6px; }
       <input type="file" name="file" accept=".txt,.csv" required>
       <button class="primary">Import file</button>
       <p class="hint">Every YouTube link or @handle found in the file gets added. Optional columns after
-        the link set the niche and sub-niche (e.g. <code>youtube.com/@x, Tech, Mini PCs</code>).
-        Re-importing existing channels fills in blank niches without creating duplicates —
-        niches you've set by hand are never overwritten.</p>
+        the link set niche, sub-niche and agency (e.g. <code>youtube.com/@x, Tech, Mini PCs, BossMgmtGrp</code>);
+        with a header row like <code>channel,agency</code> you can supply just the columns you have.
+        Re-importing existing channels fills in blank fields without creating duplicates —
+        values you've set by hand are never overwritten.</p>
     </form>
   </div>
 </div>
@@ -74,7 +75,7 @@ td form { display:inline-block; margin-right:6px; }
          oninput="filterChannels(this.value)">
   <div class="scroll">
     <table id="chanTable">
-      <tr><th>Channel</th><th>Niche / sub-niche</th><th>Status</th><th>Videos</th><th>Sponsorships</th><th>Last scanned</th><th></th></tr>
+      <tr><th>Channel</th><th>Niche / sub-niche / agency</th><th>Status</th><th>Videos</th><th>Sponsorships</th><th>Last scanned</th><th></th></tr>
       {% for c in chans %}
       <tr>
         <td>
@@ -85,7 +86,8 @@ td form { display:inline-block; margin-right:6px; }
           <form method="post" action="{{ url_for('channels_niche', cid=c.id) }}" class="niche-form">
             <input type="text" name="niche" value="{{ c.niche or '' }}" placeholder="Niche" list="nichelist">
             <input type="text" name="subniche" value="{{ c.subniche or '' }}" placeholder="Sub-niche">
-            <button title="Save niche">Save</button>
+            <input type="text" name="agency" value="{{ c.agency or '' }}" placeholder="Agency" list="agencylist">
+            <button title="Save details">Save</button>
           </form>
         </td>
         <td>
@@ -119,6 +121,9 @@ td form { display:inline-block; margin-right:6px; }
 
 <datalist id="nichelist">
   {% for n in niches %}<option value="{{ n }}">{% endfor %}
+</datalist>
+<datalist id="agencylist">
+  {% for a in agencies %}<option value="{{ a }}">{% endfor %}
 </datalist>
 <script>
 function filterChannels(q) {

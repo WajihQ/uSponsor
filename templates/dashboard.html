@@ -52,22 +52,73 @@ table.hm { width:auto; }
 {% endblock %}
 
 {% block content %}
+<div class="card" style="padding:12px 18px">
+  <form style="margin-bottom:0" class="filters" method="get">
+    <select name="days" onchange="this.form.submit()">
+      {% for k, label in ranges.items() %}
+        <option value="{{ k }}" {{ 'selected' if k == days }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <select name="brand" onchange="this.form.submit()">
+      <option value="">All brands</option>
+      {% for b in all_brands %}
+        <option value="{{ b.brand_key }}" {{ 'selected' if b.brand_key == f_brand }}>{{ b.brand }}</option>
+      {% endfor %}
+    </select>
+    <select name="creator" onchange="this.form.submit()">
+      <option value="">All creators</option>
+      {% for c in all_creators %}
+        <option value="{{ c.id }}" {{ 'selected' if c.id|string == f_creator }}>{{ c.name }}{{ ' ✓' if c.status == 'closed' }}</option>
+      {% endfor %}
+    </select>
+    {% if all_agencies %}
+    <select name="agency" onchange="this.form.submit()">
+      <option value="">All agencies</option>
+      {% for a in all_agencies %}
+        <option value="{{ a }}" {{ 'selected' if a == f_agency }}>{{ a }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+    {% if all_niches %}
+    <select name="niche" onchange="this.form.submit()">
+      <option value="">All niches</option>
+      {% for n in all_niches %}
+        <option value="{{ n }}" {{ 'selected' if n == f_niche }}>{{ n }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+    {% if all_subniches %}
+    <select name="subniche" onchange="this.form.submit()">
+      <option value="">All sub-niches</option>
+      {% for n in all_subniches %}
+        <option value="{{ n }}" {{ 'selected' if n == f_subniche }}>{{ n }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+    <select name="status" onchange="this.form.submit()">
+      <option value="">Prospects &amp; closed</option>
+      <option value="closed" {{ 'selected' if f_status == 'closed' }}>Closed only ✓</option>
+    </select>
+    {% if f_brand or f_creator or f_status or f_niche or f_subniche or f_agency %}<a href="{{ url_for('dashboard', days=days) }}">clear</a>{% endif %}
+  </form>
+</div>
+
 <div class="tiles">
   <div class="tile"><div class="v num">{{ stats.week }}</div><div class="l">sponsorships this week</div></div>
-  <div class="tile"><div class="v num">{{ stats.brands }}</div><div class="l">brands seen (all time)</div></div>
+  <div class="tile"><div class="v num">{{ stats.brands }}</div><div class="l">brands seen ({{ ranges[days] | lower }})</div></div>
   <div class="tile"><div class="v num">{{ stats.creators }}</div><div class="l">creators tracked</div></div>
   <div class="tile"><div class="v num">{{ stats.videos }}</div><div class="l">videos scanned</div></div>
 </div>
 
 <div class="card">
   <h2>This week's sponsorships</h2>
-  <p class="sub">Each chip is a sponsored video — hover for the video title, click to open it.</p>
+  <p class="sub">Most recent day first. Each chip is a sponsored video — hover for the title, click to open. Follows the filters above.</p>
   {% if week_grid %}
   <div class="scroll">
     <div class="week">
       <div class="hd" style="text-align:left">Creator</div>
       {% for d in day_list %}
-        <div class="hd {{ 'today' if loop.last }}">{{ d.strftime('%a') }} {{ d.day }} {{ d.strftime('%b') }}</div>
+        <div class="hd {{ 'today' if loop.first }}">{{ d.strftime('%a') }} {{ d.day }} {{ d.strftime('%b') }}</div>
       {% endfor %}
       {% for creator, cells in week_grid.items() %}
         <div class="cr" title="{{ creator }}">{{ creator }}{% if creator in closed_names %}<span class="badge">✓</span>{% endif %}</div>
@@ -88,7 +139,7 @@ table.hm { width:auto; }
 
 <div class="card">
   <h2>Brand × creator frequency</h2>
-  <p class="sub">How many times each brand sponsored each creator ({{ ranges[days] | lower }}). Top 12 brands shown.</p>
+  <p class="sub">How many times each brand sponsored each creator ({{ ranges[days] | lower }}). Top 12 brands shown. Follows the filters above.</p>
   {% if heatmap.rows %}
   <div class="scroll">
     <table class="hm">
@@ -121,46 +172,6 @@ table.hm { width:auto; }
 <div class="card">
   <h2>Sponsorship log</h2>
   <p class="sub">Every detected sponsorship, newest first.</p>
-  <form class="filters" method="get">
-    <select name="days" onchange="this.form.submit()">
-      {% for k, label in ranges.items() %}
-        <option value="{{ k }}" {{ 'selected' if k == days }}>{{ label }}</option>
-      {% endfor %}
-    </select>
-    <select name="brand" onchange="this.form.submit()">
-      <option value="">All brands</option>
-      {% for b in all_brands %}
-        <option value="{{ b.brand_key }}" {{ 'selected' if b.brand_key == f_brand }}>{{ b.brand }}</option>
-      {% endfor %}
-    </select>
-    <select name="creator" onchange="this.form.submit()">
-      <option value="">All creators</option>
-      {% for c in all_creators %}
-        <option value="{{ c.id }}" {{ 'selected' if c.id|string == f_creator }}>{{ c.name }}{{ ' ✓' if c.status == 'closed' }}</option>
-      {% endfor %}
-    </select>
-    {% if all_niches %}
-    <select name="niche" onchange="this.form.submit()">
-      <option value="">All niches</option>
-      {% for n in all_niches %}
-        <option value="{{ n }}" {{ 'selected' if n == f_niche }}>{{ n }}</option>
-      {% endfor %}
-    </select>
-    {% endif %}
-    {% if all_subniches %}
-    <select name="subniche" onchange="this.form.submit()">
-      <option value="">All sub-niches</option>
-      {% for n in all_subniches %}
-        <option value="{{ n }}" {{ 'selected' if n == f_subniche }}>{{ n }}</option>
-      {% endfor %}
-    </select>
-    {% endif %}
-    <select name="status" onchange="this.form.submit()">
-      <option value="">Prospects &amp; closed</option>
-      <option value="closed" {{ 'selected' if f_status == 'closed' }}>Closed only ✓</option>
-    </select>
-    {% if f_brand or f_creator or f_status or f_niche or f_subniche %}<a href="{{ url_for('dashboard', days=days) }}">clear</a>{% endif %}
-  </form>
   {% if rows %}
   <div class="scroll">
     <table>

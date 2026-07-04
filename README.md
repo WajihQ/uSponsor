@@ -50,13 +50,22 @@ Open http://127.0.0.1:5000
    ("Mark closed" / "Reopen"). Closed creators get a ✓ badge across the
    app, the dashboard log can filter to closed-only, and both scan types
    can target just your closed roster.
-5. **Dashboard** shows:
-   - **This week's sponsorships** — creator × day grid of brand chips; click
-     a chip to open the video.
+5. Tag creators managed by another agency with an **agency** name (inline
+   field or an import column — a header row like `channel,agency` works).
+   The dashboard's Agency filter then shows exactly which brands that
+   agency's roster already works with, so you don't pitch them.
+6. **Dashboard** — one filter bar (time / brand / creator / agency / niche /
+   sub-niche / status) drives every widget:
+   - **This week's sponsorships** — creator × day grid of brand chips,
+     most recent day first; click a chip to open the video.
    - **Brand × creator frequency** — heatmap of how many times each brand
      sponsored each creator (e.g. Geekom × Aman = 3).
    - **Sponsorship log** — every detection with date, video link and the
-     disclosure text found, filterable by time range / brand / creator.
+     disclosure text found.
+7. **Brands tab** — import your CRM's brand list (.txt/.csv, one name per
+   line). The tab suggests detected sponsors that aren't in your CRM yet,
+   with counts and last-seen dates; mark one as known and it stops being
+   suggested. Matching ignores case/punctuation.
 
 ## Backfill scans
 

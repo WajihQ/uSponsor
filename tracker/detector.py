@@ -48,7 +48,9 @@ _REJECT_SUBSTR = (
     "you guys", "everyone", "you all", "y'all", "my sponsor", "our sponsor",
     "no one", "nobody", "watching", "these companies", "the following",
 )
-_REJECT_EXACT = {"me", "you", "us", "them", "all", "everybody", "yourself", "himself", "herself"}
+_REJECT_EXACT = {"me", "you", "us", "them", "all", "everybody", "yourself", "himself", "herself",
+                 "http", "https", "www", "link", "links", "the link", "checkout", "check out",
+                 "the checkout", "cart", "the cart"}
 
 
 def brand_key(name):
@@ -58,8 +60,8 @@ def brand_key(name):
 
 def _clean(blob):
     s = blob.strip()
-    # cut before any URL, common arrow/link lead-ins, and clause continuations
-    s = re.split(r"\s+(?:https?://|www\.|►|▶|→|<|@\s)", s)[0]
+    # cut before any URL (even unspaced), common arrow/link lead-ins, and clause continuations
+    s = re.split(r"https?://|https?$|\bwww\.|►|▶|→|<|\s@\s", s)[0]
     s = re.split(r"\s+[-–—]\s+", s)[0]
     s = re.split(
         r"\s+(?:for|who|which|where|because|get|use|save|grab|go|visit|click|try|sign|check|head|and)\s+",
@@ -85,6 +87,9 @@ def _clean(blob):
         return None
     low = s.lower()
     if low in _REJECT_EXACT or any(t in low for t in _REJECT_SUBSTR):
+        return None
+    # "use code X at (desktop) checkout / at the cart" — a place, not a brand
+    if low.split()[-1] in ("checkout", "cart"):
         return None
     if s.isdigit():
         return None

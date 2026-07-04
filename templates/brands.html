@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Brands — uSponsor{% endblock %}
+{% block style %}
+.two { display:grid; grid-template-columns:1.4fr 1fr; gap:20px; align-items:start; }
+@media (max-width:900px) { .two { grid-template-columns:1fr; } }
+input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--ink-2); }
+.hint { color:var(--muted); font-size:12px; margin:6px 0 0; }
+.markbtn { padding:4px 10px; font-size:12.5px; }
+.count { color:var(--ink-2); }
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2>Import your CRM brands</h2>
+  <p class="sub">Upload a .txt / .csv of brand names (one per line). Detected sponsors already in
+     this list won't show up as suggestions below.</p>
+  <form method="post" action="{{ url_for('brands_import') }}" enctype="multipart/form-data"
+        style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+    <input type="file" name="file" accept=".txt,.csv" required style="margin:0">
+    <button class="primary">Import brands</button>
+  </form>
+  <p class="hint">Matching ignores case and punctuation, so “NordVPN” in your CRM matches “Nord VPN” from a video description.</p>
+</div>
+
+<div class="two">
+  <div class="card">
+    <h2>Suggestions — not in your CRM ({{ suggestions | length }})</h2>
+    <p class="sub">Brands detected sponsoring your tracked creators that you haven't imported or
+       marked yet. Mark one as known and it stops being suggested.</p>
+    {% if suggestions %}
+    <div class="scroll">
+      <table>
+        <tr><th>Brand</th><th>Sponsorships</th><th>Creators</th><th>Last seen</th><th></th></tr>
+        {% for s in suggestions %}
+        <tr>
+          <td><b>{{ s.name }}</b></td>
+          <td class="num">{{ s.n }}</td>
+          <td class="num">{{ s.creators }}</td>
+          <td class="num">{{ s.last_seen or '—' }}</td>
+          <td>
+            <form method="post" action="{{ url_for('brands_mark') }}">
+              <input type="hidden" name="name" value="{{ s.name }}">
+              <button class="markbtn" title="Add to known brands — stops suggesting it">Mark as known</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    {% else %}
+      <p class="sub">Nothing to suggest — every detected brand is already in your known list. 🎉</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Known brands ({{ known | length }})</h2>
+    <p class="sub">From your CRM imports and manual marks.</p>
+    {% if known %}
+    <div class="scroll">
+      <table>
+        <tr><th>Brand</th><th>Detected</th><th></th></tr>
+        {% for b in known %}
+        <tr>
+          <td>{{ b.name }}</td>
+          <td class="num count">{{ b.hits or '—' }}</td>
+          <td>
+            <form method="post" action="{{ url_for('brands_delete', bid=b.id) }}">
+              <button class="markbtn danger">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    {% else %}
+      <p class="sub">No known brands yet — import your CRM list above.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
