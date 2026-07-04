@@ -65,7 +65,7 @@ table.hm { width:auto; }
     <div class="week">
       <div class="hd" style="text-align:left">Creator</div>
       {% for d in day_list %}
-        <div class="hd {{ 'today' if loop.last }}">{{ d.strftime('%a %-d %b') }}</div>
+        <div class="hd {{ 'today' if loop.last }}">{{ d.strftime('%a') }} {{ d.day }} {{ d.strftime('%b') }}</div>
       {% endfor %}
       {% for creator, cells in week_grid.items() %}
         <div class="cr" title="{{ creator }}">{{ creator }}</div>
