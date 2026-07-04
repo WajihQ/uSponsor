@@ -45,6 +45,15 @@ table.hm { width:auto; }
 .filters { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
 .filters select { font:inherit; padding:6px 8px; border:1px solid var(--ring);
   border-radius:8px; background:var(--surface); color:var(--ink); }
+.fx { display:inline-flex; align-items:center; gap:3px; }
+.fx a.x { font-weight:700; padding:0 5px; border-radius:6px; color:var(--bad); text-decoration:none; }
+.fx a.x:hover { background:var(--chip-bg); }
+.resetbtn { font-size:13px; padding:6px 12px; border:1px solid var(--ring); border-radius:8px;
+  color:var(--ink-2); text-decoration:none; }
+.resetbtn:hover { text-decoration:none; border-color:var(--accent); color:var(--accent); }
+.pager { display:flex; gap:14px; align-items:center; margin-top:12px; font-size:13px; color:var(--ink-2); }
+.pager a { font-weight:600; }
+.pager .dis { color:var(--muted); }
 .ev { color:var(--muted); font-size:12px; }
 .badge { display:inline-block; font-size:10.5px; font-weight:700; border-radius:999px;
          padding:0 7px; margin-left:5px; color:var(--good); border:1px solid var(--good); }
@@ -59,47 +68,70 @@ table.hm { width:auto; }
         <option value="{{ k }}" {{ 'selected' if k == days }}>{{ label }}</option>
       {% endfor %}
     </select>
-    <select name="brand" onchange="this.form.submit()">
-      <option value="">All brands</option>
-      {% for b in all_brands %}
-        <option value="{{ b.brand_key }}" {{ 'selected' if b.brand_key == f_brand }}>{{ b.brand }}</option>
-      {% endfor %}
-    </select>
-    <select name="creator" onchange="this.form.submit()">
-      <option value="">All creators</option>
-      {% for c in all_creators %}
-        <option value="{{ c.id }}" {{ 'selected' if c.id|string == f_creator }}>{{ c.name }}{{ ' ✓' if c.status == 'closed' }}</option>
-      {% endfor %}
-    </select>
+    <span class="fx">
+      <select name="brand" onchange="this.form.submit()">
+        <option value="">All brands</option>
+        {% for b in all_brands %}
+          <option value="{{ b.brand_key }}" {{ 'selected' if b.brand_key == f_brand }}>{{ b.brand }}</option>
+        {% endfor %}
+      </select>
+      {% if f_brand %}<a class="x" href="{{ clear_url('brand') }}" title="Back to all brands">×</a>{% endif %}
+    </span>
+    <span class="fx">
+      <select name="creator" onchange="this.form.submit()">
+        <option value="">All creators</option>
+        {% for c in all_creators %}
+          <option value="{{ c.id }}" {{ 'selected' if c.id|string == f_creator }}>{{ c.name }}{{ ' ✓' if c.status == 'closed' }}</option>
+        {% endfor %}
+      </select>
+      {% if f_creator %}<a class="x" href="{{ clear_url('creator') }}" title="Back to all creators">×</a>{% endif %}
+    </span>
     {% if all_agencies %}
-    <select name="agency" onchange="this.form.submit()">
-      <option value="">All agencies</option>
-      {% for a in all_agencies %}
-        <option value="{{ a }}" {{ 'selected' if a == f_agency }}>{{ a }}</option>
-      {% endfor %}
-    </select>
+    <span class="fx">
+      <select name="agency" onchange="this.form.submit()">
+        <option value="">All agencies</option>
+        {% for a in all_agencies %}
+          <option value="{{ a }}" {{ 'selected' if a == f_agency }}>{{ a }}</option>
+        {% endfor %}
+      </select>
+      {% if f_agency %}<a class="x" href="{{ clear_url('agency') }}" title="Back to all agencies">×</a>{% endif %}
+    </span>
     {% endif %}
     {% if all_niches %}
-    <select name="niche" onchange="this.form.submit()">
-      <option value="">All niches</option>
-      {% for n in all_niches %}
-        <option value="{{ n }}" {{ 'selected' if n == f_niche }}>{{ n }}</option>
-      {% endfor %}
-    </select>
+    <span class="fx">
+      <select name="niche" onchange="this.form.submit()">
+        <option value="">All niches</option>
+        {% for n in all_niches %}
+          <option value="{{ n }}" {{ 'selected' if n == f_niche }}>{{ n }}</option>
+        {% endfor %}
+      </select>
+      {% if f_niche %}<a class="x" href="{{ clear_url('niche') }}" title="Back to all niches">×</a>{% endif %}
+    </span>
     {% endif %}
     {% if all_subniches %}
-    <select name="subniche" onchange="this.form.submit()">
-      <option value="">All sub-niches</option>
-      {% for n in all_subniches %}
-        <option value="{{ n }}" {{ 'selected' if n == f_subniche }}>{{ n }}</option>
+    <span class="fx">
+      <select name="subniche" onchange="this.form.submit()">
+        <option value="">All sub-niches</option>
+        {% for n in all_subniches %}
+          <option value="{{ n }}" {{ 'selected' if n == f_subniche }}>{{ n }}</option>
+        {% endfor %}
+      </select>
+      {% if f_subniche %}<a class="x" href="{{ clear_url('subniche') }}" title="Back to all sub-niches">×</a>{% endif %}
+    </span>
+    {% endif %}
+    <span class="fx">
+      <select name="status" onchange="this.form.submit()">
+        <option value="">Prospects &amp; closed</option>
+        <option value="closed" {{ 'selected' if f_status == 'closed' }}>Closed only ✓</option>
+      </select>
+      {% if f_status %}<a class="x" href="{{ clear_url('status') }}" title="Back to all statuses">×</a>{% endif %}
+    </span>
+    <select name="limit" onchange="this.form.submit()" title="Log rows per page">
+      {% for l in (50, 100, 200) %}
+        <option value="{{ l }}" {{ 'selected' if l == limit }}>{{ l }} / page</option>
       {% endfor %}
     </select>
-    {% endif %}
-    <select name="status" onchange="this.form.submit()">
-      <option value="">Prospects &amp; closed</option>
-      <option value="closed" {{ 'selected' if f_status == 'closed' }}>Closed only ✓</option>
-    </select>
-    {% if f_brand or f_creator or f_status or f_niche or f_subniche or f_agency %}<a href="{{ url_for('dashboard', days=days) }}">clear</a>{% endif %}
+    <a class="resetbtn" href="{{ url_for('dashboard') }}" title="Reset every filter to default">Reset filters</a>
   </form>
 </div>
 
@@ -171,7 +203,7 @@ table.hm { width:auto; }
 
 <div class="card">
   <h2>Sponsorship log</h2>
-  <p class="sub">Every detected sponsorship, newest first.</p>
+  <p class="sub">{{ total }} detection(s), newest first — page {{ page }} of {{ pages }}.</p>
   {% if rows %}
   <div class="scroll">
     <table>
@@ -187,6 +219,13 @@ table.hm { width:auto; }
       {% endfor %}
     </table>
   </div>
+  {% if pages > 1 %}
+  <div class="pager">
+    {% if page > 1 %}<a href="{{ page_url(page - 1) }}">‹ Prev</a>{% else %}<span class="dis">‹ Prev</span>{% endif %}
+    <span>Page {{ page }} of {{ pages }}</span>
+    {% if page < pages %}<a href="{{ page_url(page + 1) }}">Next ›</a>{% else %}<span class="dis">Next ›</span>{% endif %}
+  </div>
+  {% endif %}
   {% else %}
     <div class="empty">No results for this filter.</div>
   {% endif %}

@@ -61,13 +61,17 @@ Open http://127.0.0.1:5000
    - **Brand × creator frequency** — heatmap of how many times each brand
      sponsored each creator (e.g. Geekom × Aman = 3).
    - **Sponsorship log** — every detection with date, video link and the
-     disclosure text found.
+     disclosure text found; paginated (50/100/200 per page). Active filters
+     show an × for one-click clearing, and **Reset filters** restores all
+     defaults.
 7. **Brands tab** — import your CRM's brand list (.txt/.csv, one name per
    line). The tab suggests detected sponsors that aren't in your CRM yet,
    with counts and last-seen dates; mark one as **known** and it stops
    being suggested, or **erroneous** and it disappears from the dashboard
-   and suggestions entirely (reversible). Matching ignores case and
-   punctuation. Known brands also boost detection: a mention near sponsor
+   and suggestions entirely (reversible). Brand names in both columns are
+   editable in place — renaming one onto another's name **consolidates**
+   them (e.g. "Opera Air" → "Opera" merges their sponsorship history).
+   Matching ignores case and punctuation. Known brands also boost detection: a mention near sponsor
    language ("use code…", "% off", "partner") is caught even when the
    disclosure phrasing is unusual.
 8. Video descriptions are stored in the database, so **Re-run detection**

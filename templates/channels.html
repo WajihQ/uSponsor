@@ -71,8 +71,16 @@ td form { display:inline-block; margin-right:6px; }
   <h2>Tracked channels ({{ chans | length }})</h2>
   <p class="sub">Names resolve automatically on first scan. Removing a channel also removes its stored videos and sponsorships.</p>
   {% if chans %}
-  <input type="text" id="chanSearch" placeholder="Search creators… (name, link, or niche)"
-         oninput="filterChannels(this.value)">
+  <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px">
+    <input type="text" id="chanSearch" placeholder="Search creators… (name, link, niche, agency)"
+           oninput="filterChannels(this.value)" style="margin-bottom:0">
+    <select onchange="location = '{{ url_for('channels') }}' + (this.value ? '?status=' + this.value : '')"
+            style="font:inherit; padding:7px 8px; border:1px solid var(--ring); border-radius:8px; background:var(--surface); color:var(--ink)">
+      <option value="" {{ 'selected' if not f_status }}>All statuses</option>
+      <option value="closed" {{ 'selected' if f_status == 'closed' }}>Closed only ✓</option>
+      <option value="prospect" {{ 'selected' if f_status == 'prospect' }}>Prospects only</option>
+    </select>
+  </div>
   <div class="scroll">
     <table id="chanTable">
       <tr><th>Channel</th><th>Niche / sub-niche / agency</th><th>Status</th><th>Videos</th><th>Sponsorships</th><th>Last scanned</th><th></th></tr>

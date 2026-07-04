@@ -35,6 +35,14 @@ def dashboard():
     f_niche = request.args.get("niche", "")
     f_subniche = request.args.get("subniche", "")
     f_agency = request.args.get("agency", "")
+    limit = request.args.get("limit", "50")
+    if limit not in ("50", "100", "200"):
+        limit = "50"
+    limit = int(limit)
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+    except ValueError:
+        page = 1
     since = _since(days)
 
     conn = db.connect()
@@ -67,12 +75,15 @@ def dashboard():
             " JOIN channels c ON c.id = v.channel_ref WHERE " + cond
         )
 
+        total = conn.execute("SELECT COUNT(*)" + base, cargs(since)).fetchone()[0]
+        pages = max((total + limit - 1) // limit, 1)
+        page = min(page, pages)
         rows = conn.execute(
             "SELECT s.brand, s.brand_key, s.evidence, v.title, v.url, v.upload_date,"
             " c.name AS creator, c.id AS creator_id "
             + base
-            + " ORDER BY v.upload_date DESC, s.id DESC LIMIT 500",
-            cargs(since),
+            + " ORDER BY v.upload_date DESC, s.id DESC LIMIT ? OFFSET ?",
+            cargs(since) + [limit, (page - 1) * limit],
         ).fetchall()
 
         # brand x creator counts for the heatmap (all active filters apply)
@@ -166,19 +177,29 @@ def dashboard():
         f_niche=f_niche, f_subniche=f_subniche, all_niches=all_niches, all_subniches=all_subniches,
         f_agency=f_agency, all_agencies=all_agencies,
         all_brands=all_brands, all_creators=all_creators, closed_names=closed_names,
+        limit=limit, page=page, pages=pages, total=total,
+        page_url=lambda p: url_for("dashboard", **{**request.args.to_dict(), "page": p}),
+        clear_url=lambda param: url_for(
+            "dashboard", **{k: v for k, v in request.args.to_dict().items() if k not in (param, "page")}
+        ),
         scan=scraper.STATE,
     )
 
 
 @app.route("/channels")
 def channels():
+    f_status = request.args.get("status", "")
+    if f_status not in ("", "closed", "prospect"):
+        f_status = ""
     conn = db.connect()
     try:
         chans = conn.execute(
             "SELECT c.*, COUNT(DISTINCT v.id) AS videos, COUNT(s.id) AS spons"
             " FROM channels c LEFT JOIN videos v ON v.channel_ref = c.id"
             " LEFT JOIN sponsorships s ON s.video_ref = v.id"
-            " GROUP BY c.id ORDER BY COALESCE(c.name, c.input_url)"
+            + (" WHERE c.status = ?" if f_status else "")
+            + " GROUP BY c.id ORDER BY COALESCE(c.name, c.input_url)",
+            (f_status,) if f_status else (),
         ).fetchall()
         niches = [
             r["niche"] for r in conn.execute(
@@ -192,7 +213,10 @@ def channels():
         ]
     finally:
         conn.close()
-    return render_template("channels.html", chans=chans, niches=niches, agencies=agencies, scan=scraper.STATE)
+    return render_template(
+        "channels.html", chans=chans, niches=niches, agencies=agencies,
+        f_status=f_status, scan=scraper.STATE,
+    )
 
 
 @app.route("/channels/add", methods=["POST"])
@@ -293,6 +317,44 @@ def brands_mark():
             flash(f"“{name}” marked erroneous — hidden from the dashboard and suggestions.", "ok")
         else:
             flash(f"“{name}” marked as known — it won't be suggested again.", "ok")
+    return redirect(url_for("brands"))
+
+
+@app.route("/brands/rename", methods=["POST"])
+def brands_rename():
+    """Rename a detected/known brand everywhere. Renaming onto an existing
+    brand's name consolidates the two (e.g. 'Opera Air' -> 'Opera')."""
+    from tracker.detector import brand_key
+    old_key = request.form.get("old_key", "")
+    new_name = request.form.get("new_name", "").strip()[:60]
+    new_key = brand_key(new_name)
+    if not old_key or len(new_key) < 2:
+        flash("That name is too short.", "err")
+        return redirect(url_for("brands"))
+    conn = db.connect()
+    try:
+        if new_key != old_key:
+            # move sponsorship rows; drop ones that would duplicate an existing
+            # (video, new brand) pair, then normalize the display name
+            conn.execute(
+                "UPDATE OR IGNORE sponsorships SET brand = ?, brand_key = ? WHERE brand_key = ?",
+                (new_name, new_key, old_key),
+            )
+            conn.execute("DELETE FROM sponsorships WHERE brand_key = ?", (old_key,))
+            # unify the display name on rows that already carried the target key
+            conn.execute("UPDATE sponsorships SET brand = ? WHERE brand_key = ?", (new_name, new_key))
+            conn.execute(
+                "UPDATE OR IGNORE brands SET name = ?, brand_key = ? WHERE brand_key = ?",
+                (new_name, new_key, old_key),
+            )
+            conn.execute("DELETE FROM brands WHERE brand_key = ?", (old_key,))
+        else:
+            conn.execute("UPDATE sponsorships SET brand = ? WHERE brand_key = ?", (new_name, old_key))
+            conn.execute("UPDATE brands SET name = ? WHERE brand_key = ?", (new_name, old_key))
+        conn.commit()
+    finally:
+        conn.close()
+    flash(f"Renamed to “{new_name}” — matching entries were consolidated.", "ok")
     return redirect(url_for("brands"))
 
 

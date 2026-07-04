@@ -7,6 +7,12 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
 .hint { color:var(--muted); font-size:12px; margin:6px 0 0; }
 .markbtn { padding:4px 10px; font-size:12.5px; }
 .count { color:var(--ink-2); }
+.rename { display:flex; gap:5px; align-items:center; }
+.rename input { font:inherit; font-size:13px; font-weight:600; width:150px; padding:4px 7px;
+  border:1px solid transparent; border-radius:6px; background:transparent; color:var(--ink); }
+.rename input:hover, .rename input:focus { border-color:var(--ring); background:var(--page); }
+.rename button { padding:4px 9px; font-size:12px; visibility:hidden; }
+.rename:focus-within button { visibility:visible; }
 {% endblock %}
 
 {% block content %}
@@ -47,7 +53,14 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
         <tr><th>Brand</th><th>Sponsorships</th><th>Creators</th><th>Last seen</th><th></th></tr>
         {% for s in suggestions %}
         <tr>
-          <td><b>{{ s.name }}</b></td>
+          <td>
+            <form method="post" action="{{ url_for('brands_rename') }}" class="rename">
+              <input type="hidden" name="old_key" value="{{ s.brand_key }}">
+              <input type="text" name="new_name" value="{{ s.name }}"
+                     title="Edit to rename — using another brand's name merges them (e.g. Opera Air → Opera)">
+              <button>Save</button>
+            </form>
+          </td>
           <td class="num">{{ s.n }}</td>
           <td class="num">{{ s.creators }}</td>
           <td class="num">{{ s.last_seen or '—' }}</td>
@@ -80,7 +93,14 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
         <tr><th>Brand</th><th>Detected</th><th></th></tr>
         {% for b in known %}
         <tr>
-          <td>{{ b.name }}</td>
+          <td>
+            <form method="post" action="{{ url_for('brands_rename') }}" class="rename">
+              <input type="hidden" name="old_key" value="{{ b.brand_key }}">
+              <input type="text" name="new_name" value="{{ b.name }}"
+                     title="Edit to rename — using another brand's name merges them">
+              <button>Save</button>
+            </form>
+          </td>
           <td class="num count">{{ b.hits or '—' }}</td>
           <td>
             <form method="post" action="{{ url_for('brands_delete', bid=b.id) }}">
