@@ -185,8 +185,13 @@ def channels():
 
 @app.route("/channels/add", methods=["POST"])
 def channels_add():
-    ok, info = db.add_channel(request.form.get("url", ""))
-    flash(("Added " + info) if ok else ("Not added: " + info), "ok" if ok else "err")
+    status, info = db.add_channel(request.form.get("url", ""))
+    if status == "added":
+        flash("Added " + info, "ok")
+    elif status == "updated":
+        flash("Already tracked — filled in its niche from your input: " + info, "ok")
+    else:
+        flash("Not added: " + info, "err")
     return redirect(url_for("channels"))
 
 
@@ -197,8 +202,12 @@ def channels_import():
         flash("No file selected.", "err")
         return redirect(url_for("channels"))
     text = f.read().decode("utf-8", errors="replace")
-    added, skipped = db.import_channel_lines(text)
-    flash(f"Imported {len(added)} channel(s); skipped {len(skipped)} (duplicates/invalid).", "ok")
+    added, updated, skipped = db.import_channel_lines(text)
+    flash(
+        f"Imported {len(added)} new channel(s), filled niches on {len(updated)} existing,"
+        f" skipped {len(skipped)} (unchanged duplicates/invalid).",
+        "ok",
+    )
     return redirect(url_for("channels"))
 
 

@@ -33,7 +33,10 @@ td form { display:inline-block; margin-right:6px; }
     <form method="post" action="{{ url_for('channels_import') }}" enctype="multipart/form-data">
       <input type="file" name="file" accept=".txt,.csv" required>
       <button class="primary">Import file</button>
-      <p class="hint">Every YouTube link or @handle found in the file gets added; duplicates are skipped.</p>
+      <p class="hint">Every YouTube link or @handle found in the file gets added. Optional columns after
+        the link set the niche and sub-niche (e.g. <code>youtube.com/@x, Tech, Mini PCs</code>).
+        Re-importing existing channels fills in blank niches without creating duplicates —
+        niches you've set by hand are never overwritten.</p>
     </form>
   </div>
 </div>

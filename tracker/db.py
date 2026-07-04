@@ -63,17 +63,39 @@ def init_db():
             conn.execute("ALTER TABLE channels ADD COLUMN subniche TEXT")
 
 
-def add_channel(url):
-    """Insert a channel by URL/handle. Returns (added, reason)."""
+def add_channel(url, niche=None, subniche=None):
+    """Insert a channel by URL/handle, with optional niche tags.
+
+    If the channel already exists, empty niche/sub-niche fields are filled
+    from the arguments (hand-set values are never overwritten). Returns
+    (status, info) where status is 'added' | 'updated' | 'duplicate' | 'invalid'.
+    """
     url = normalize_channel_url(url)
     if not url:
-        return False, "not a recognizable YouTube channel link or @handle"
+        return "invalid", "not a recognizable YouTube channel link or @handle"
+    niche = (niche or "").strip()[:40] or None
+    subniche = (subniche or "").strip()[:40] or None
     with connect() as conn:
-        dup = conn.execute("SELECT 1 FROM channels WHERE input_url = ?", (url,)).fetchone()
-        if dup:
-            return False, "already in the list"
-        conn.execute("INSERT INTO channels (input_url) VALUES (?)", (url,))
-    return True, url
+        row = conn.execute(
+            "SELECT id, niche, subniche FROM channels WHERE input_url = ?", (url,)
+        ).fetchone()
+        if row:
+            sets, vals = [], []
+            if niche and not row["niche"]:
+                sets.append("niche = ?"); vals.append(niche)
+            if subniche and not row["subniche"]:
+                sets.append("subniche = ?"); vals.append(subniche)
+            if sets:
+                conn.execute(
+                    f"UPDATE channels SET {', '.join(sets)} WHERE id = ?", (*vals, row["id"])
+                )
+                return "updated", url
+            return "duplicate", "already in the list"
+        conn.execute(
+            "INSERT INTO channels (input_url, niche, subniche) VALUES (?, ?, ?)",
+            (url, niche, subniche),
+        )
+    return "added", url
 
 
 def normalize_channel_url(raw):
@@ -97,14 +119,30 @@ def normalize_channel_url(raw):
 
 
 def import_channel_lines(text):
-    """Parse a .txt/.csv blob: pull every channel-looking token from every line."""
-    added, skipped = [], []
+    """Parse a .txt/.csv blob into channels, with optional niche columns.
+
+    A row with exactly one channel link may carry up to two extra cells
+    after it — niche and sub-niche (e.g. "youtube.com/@x, Tech, Mini PCs").
+    Rows with several links import each link plainly. On re-import of an
+    existing channel, blank niche fields get filled from the file; values
+    already set are left alone. Returns (added, updated, skipped) lists.
+    """
+    added, updated, skipped = [], [], []
     for line in text.splitlines():
-        for cell in line.replace(";", ",").split(","):
-            cell = cell.strip()
-            if not cell:
-                continue
-            if normalize_channel_url(cell):
-                ok, info = add_channel(cell)
-                (added if ok else skipped).append((cell, info))
-    return added, skipped
+        cells = [c.strip() for c in line.replace(";", ",").split(",")]
+        cells = [c for c in cells if c]
+        links = [(i, c) for i, c in enumerate(cells) if normalize_channel_url(c)]
+        if not links:
+            continue  # header rows, comments, junk
+        if len(links) == 1:
+            i, link = links[0]
+            extras = cells[i + 1 : i + 3]  # niche, sub-niche
+            niche = extras[0] if extras else None
+            subniche = extras[1] if len(extras) > 1 else None
+            results = [(link, add_channel(link, niche, subniche))]
+        else:
+            results = [(link, add_channel(link)) for _, link in links]
+        for link, (status, info) in results:
+            bucket = {"added": added, "updated": updated}.get(status, skipped)
+            bucket.append((link, info))
+    return added, updated, skipped

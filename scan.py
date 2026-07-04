@@ -28,8 +28,8 @@ if __name__ == "__main__":
     db.init_db()
     if args:
         with open(args[0], encoding="utf-8") as f:
-            added, skipped = db.import_channel_lines(f.read())
-        print(f"Imported {len(added)} channel(s), skipped {len(skipped)}.")
+            added, updated, skipped = db.import_channel_lines(f.read())
+        print(f"Imported {len(added)} channel(s), updated niches on {len(updated)}, skipped {len(skipped)}.")
     scraper.run_scan(mode=mode, years=years, target=target, force=force)
     for line in scraper.STATE["log"]:
         print(line)

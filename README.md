@@ -29,8 +29,12 @@ Open http://127.0.0.1:5000
 
 1. **Channels page** — add channels one at a time (paste any channel URL or
    `@handle`), or import a `.txt`/`.csv` file with links (one or more per
-   line; see `sample_channels.csv`). You can add more channels any time —
-   they live in the app's database, not in code.
+   line; see `sample_channels.csv`). Optional columns after each link set
+   the niche and sub-niche (`youtube.com/@x, Tech, Mini PCs`). Re-importing
+   your roster is safe: existing channels aren't duplicated, blank niche
+   fields get filled from the file, and hand-set niches are never
+   overwritten. You can add more channels any time — they live in the
+   app's database, not in code.
 2. Hit **Scan now** (top right). Progress shows in the header; the page
    refreshes when done. First scan of a channel pulls its recent uploads;
    later scans only pick up new videos. Channels scanned within the last
