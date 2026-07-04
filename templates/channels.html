@@ -91,7 +91,7 @@ td form { display:inline-block; margin-right:6px; }
           {% else %}<a href="{{ c.input_url }}" target="_blank">{{ c.input_url }}</a> <span class="pend">(pending first scan)</span>{% endif %}
         </td>
         <td>
-          <form method="post" action="{{ url_for('channels_niche', cid=c.id) }}" class="niche-form">
+          <form method="post" action="{{ url_for('channels_niche', cid=c.id) }}" class="niche-form" data-ajax="toast" data-done="Creator details saved">
             <input type="text" name="niche" value="{{ c.niche or '' }}" placeholder="Niche" list="nichelist">
             <input type="text" name="subniche" value="{{ c.subniche or '' }}" placeholder="Sub-niche">
             <input type="text" name="agency" value="{{ c.agency or '' }}" placeholder="Agency" list="agencylist">
@@ -99,7 +99,7 @@ td form { display:inline-block; margin-right:6px; }
           </form>
         </td>
         <td>
-          <form method="post" action="{{ url_for('channels_status', cid=c.id) }}">
+          <form method="post" action="{{ url_for('channels_status', cid=c.id) }}" data-ajax="toggle-status" data-done="Status updated">
             {% if c.status == 'closed' %}
               <input type="hidden" name="status" value="prospect">
               <button title="Move back to prospects">Reopen</button>
@@ -113,12 +113,13 @@ td form { display:inline-block; margin-right:6px; }
         <td class="num">{{ c.spons }}</td>
         <td class="num">{{ c.last_scanned or '—' }}</td>
         <td style="white-space:nowrap">
-          <form method="post" action="{{ url_for('channels_reset', cid=c.id) }}"
-                onsubmit="return confirm('Clear stored videos for {{ (c.name or c.input_url) | e }}? The next scan re-fetches them fresh.')">
+          <form method="post" action="{{ url_for('channels_reset', cid=c.id) }}" data-ajax="zero-counts"
+                data-done="Videos cleared — next scan re-fetches fresh"
+                data-confirm="Clear stored videos for {{ (c.name or c.input_url) | e }}? The next scan re-fetches them fresh.">
             <button title="Clear stored videos so the next scan re-fetches them (with descriptions)">Re-scan fresh</button>
           </form>
-          <form method="post" action="{{ url_for('channels_delete', cid=c.id) }}"
-                onsubmit="return confirm('Remove {{ (c.name or c.input_url) | e }} and all its data?')">
+          <form method="post" action="{{ url_for('channels_delete', cid=c.id) }}" data-ajax="remove-row"
+                data-done="Channel removed" data-confirm="Remove {{ (c.name or c.input_url) | e }} and all its data?">
             <button class="danger">Remove</button>
           </form>
         </td>

@@ -80,6 +80,11 @@ Open http://127.0.0.1:5000
    on a channel to re-fetch videos scanned by older versions that didn't
    store descriptions.
 
+Row-level actions (marking closed, saving niches/agencies, renaming or
+flagging brands, removing rows) save in the background without a page
+reload — you keep your scroll position, and a small toast confirms each
+save.
+
 ## Backfill scans
 
 **Scan now** only covers each channel's newest uploads. To pull in older

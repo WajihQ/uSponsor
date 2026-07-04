@@ -54,6 +54,12 @@ td { padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top; 
 #scanStatus .dot { display:inline-block; width:8px; height:8px; border-radius:50%;
   background:var(--accent); margin-right:6px; animation:pulse 1.2s infinite; }
 @keyframes pulse { 50% { opacity:.3; } }
+#toast { position:fixed; bottom:22px; right:22px; z-index:50; background:var(--ink);
+  color:var(--page); padding:10px 16px; border-radius:10px; font-size:13.5px; font-weight:500;
+  box-shadow:0 4px 18px rgba(0,0,0,.25); opacity:0; transform:translateY(8px);
+  transition:opacity .18s, transform .18s; pointer-events:none; max-width:340px; }
+#toast.show { opacity:1; transform:none; }
+tr.fading { transition:opacity .25s; opacity:0; }
 {% block style %}{% endblock %}
 </style>
 </head>
@@ -82,7 +88,63 @@ td { padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top; 
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
+<div id="toast"></div>
 <script>
+// In-place row actions: forms marked data-ajax post via fetch and update the
+// page without a reload (so you keep your scroll position).
+(function () {
+  let timer;
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(timer);
+    timer = setTimeout(() => t.classList.remove('show'), 2600);
+  }
+  document.addEventListener('submit', async (e) => {
+    const f = e.target.closest('form[data-ajax]');
+    if (!f) return;
+    e.preventDefault();
+    if (f.dataset.confirm && !confirm(f.dataset.confirm)) return;
+    let res;
+    try {
+      res = await fetch(f.action, {
+        method: 'POST', body: new FormData(f),
+        headers: { 'X-Requested-With': 'fetch' },
+      });
+    } catch (err) { toast('Network error — not saved'); return; }
+    if (!res.ok) { toast('Failed (' + res.status + ') — not saved'); return; }
+    const act = f.dataset.ajax, row = f.closest('tr');
+    if (act === 'remove-row' && row) {
+      row.classList.add('fading');
+      setTimeout(() => row.remove(), 250);
+    } else if (act === 'toggle-status' && row) {
+      const inp = f.querySelector('input[name=status]');
+      const btn = f.querySelector('button');
+      const nameCell = row.querySelector('td');
+      const badge = nameCell && nameCell.querySelector('.badge');
+      if (inp.value === 'closed') {          // just closed it
+        inp.value = 'prospect'; btn.textContent = 'Reopen';
+        if (nameCell && !badge) {
+          const b = nameCell.querySelector('b');
+          if (b) {
+            const s = document.createElement('span');
+            s.className = 'badge closed'; s.textContent = '✓ closed';
+            b.after(s);
+          }
+        }
+      } else {                                // just reopened it
+        inp.value = 'closed'; btn.textContent = 'Mark closed';
+        if (badge) badge.remove();
+      }
+    } else if (act === 'zero-counts' && row) {
+      const cells = row.querySelectorAll('td.num');
+      if (cells[0]) cells[0].textContent = '0';
+      if (cells[1]) cells[1].textContent = '0';
+    }
+    toast(f.dataset.done || 'Saved');
+  });
+})();
 (function poll() {
   const el = document.getElementById('scanStatus');
   const wasRunning = {{ 'true' if scan.running else 'false' }};

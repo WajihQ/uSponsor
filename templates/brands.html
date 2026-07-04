@@ -54,7 +54,7 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
         {% for s in suggestions %}
         <tr>
           <td>
-            <form method="post" action="{{ url_for('brands_rename') }}" class="rename">
+            <form method="post" action="{{ url_for('brands_rename') }}" class="rename" data-ajax="toast" data-done="Renamed — matching entries consolidated">
               <input type="hidden" name="old_key" value="{{ s.brand_key }}">
               <input type="text" name="new_name" value="{{ s.name }}"
                      title="Edit to rename — using another brand's name merges them (e.g. Opera Air → Opera)">
@@ -65,11 +65,11 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
           <td class="num">{{ s.creators }}</td>
           <td class="num">{{ s.last_seen or '—' }}</td>
           <td style="white-space:nowrap">
-            <form method="post" action="{{ url_for('brands_mark') }}">
+            <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked as known">
               <input type="hidden" name="name" value="{{ s.name }}">
               <button class="markbtn" title="Add to known brands — stops suggesting it">Mark as known</button>
             </form>
-            <form method="post" action="{{ url_for('brands_mark') }}">
+            <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked erroneous — hidden everywhere">
               <input type="hidden" name="name" value="{{ s.name }}">
               <input type="hidden" name="kind" value="erroneous">
               <button class="markbtn danger" title="Not a real brand — hide it everywhere">Erroneous</button>
@@ -94,7 +94,7 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
         {% for b in known %}
         <tr>
           <td>
-            <form method="post" action="{{ url_for('brands_rename') }}" class="rename">
+            <form method="post" action="{{ url_for('brands_rename') }}" class="rename" data-ajax="toast" data-done="Renamed — matching entries consolidated">
               <input type="hidden" name="old_key" value="{{ b.brand_key }}">
               <input type="text" name="new_name" value="{{ b.name }}"
                      title="Edit to rename — using another brand's name merges them">
@@ -103,7 +103,7 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
           </td>
           <td class="num count">{{ b.hits or '—' }}</td>
           <td>
-            <form method="post" action="{{ url_for('brands_delete', bid=b.id) }}">
+            <form method="post" action="{{ url_for('brands_delete', bid=b.id) }}" data-ajax="remove-row" data-done="Removed — may reappear as a suggestion">
               <button class="markbtn danger">Remove</button>
             </form>
           </td>
@@ -126,7 +126,7 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
           <td class="count">{{ b.name }}</td>
           <td class="num count">{{ b.hits or '—' }}</td>
           <td>
-            <form method="post" action="{{ url_for('brands_delete', bid=b.id) }}">
+            <form method="post" action="{{ url_for('brands_delete', bid=b.id) }}" data-ajax="remove-row" data-done="Restored — visible again">
               <button class="markbtn" title="Un-flag — shows up again">Restore</button>
             </form>
           </td>

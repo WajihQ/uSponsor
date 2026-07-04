@@ -15,6 +15,15 @@ db.init_db()
 RANGES = {"7": "Last 7 days", "30": "Last 30 days", "90": "Last 90 days", "all": "All time"}
 
 
+def _done(message, category="ok", endpoint="dashboard"):
+    """Finish a row-action request: 204 for fetch() calls (the page updates
+    itself in place), flash + redirect for plain form posts."""
+    if request.headers.get("X-Requested-With") == "fetch":
+        return "", 204
+    flash(message, category)
+    return redirect(request.referrer or url_for(endpoint))
+
+
 def _since(days_param):
     if days_param == "all":
         return "0000-00-00"
@@ -261,8 +270,7 @@ def channels_niche(cid):
         conn.commit()
     finally:
         conn.close()
-    flash("Creator details updated.", "ok")
-    return redirect(request.referrer or url_for("channels"))
+    return _done("Creator details updated.", endpoint="channels")
 
 
 @app.route("/brands")
@@ -313,10 +321,7 @@ def brands_mark():
         kind = "known"
     if name:
         db.import_brand_lines(name, kind=kind)
-        if kind == "erroneous":
-            flash(f"“{name}” marked erroneous — hidden from the dashboard and suggestions.", "ok")
-        else:
-            flash(f"“{name}” marked as known — it won't be suggested again.", "ok")
+        return _done(f"“{name}” marked as {kind}.", endpoint="brands")
     return redirect(url_for("brands"))
 
 
@@ -354,8 +359,7 @@ def brands_rename():
         conn.commit()
     finally:
         conn.close()
-    flash(f"Renamed to “{new_name}” — matching entries were consolidated.", "ok")
-    return redirect(url_for("brands"))
+    return _done(f"Renamed to “{new_name}” — matching entries were consolidated.", endpoint="brands")
 
 
 @app.route("/redetect", methods=["POST"])
@@ -374,8 +378,7 @@ def channels_reset(cid):
         conn.commit()
     finally:
         conn.close()
-    flash("Channel videos cleared — the next scan re-fetches them fresh (with descriptions stored).", "ok")
-    return redirect(url_for("channels"))
+    return _done("Channel videos cleared — the next scan re-fetches them fresh.", endpoint="channels")
 
 
 @app.route("/brands/<int:bid>/delete", methods=["POST"])
@@ -386,8 +389,7 @@ def brands_delete(bid):
         conn.commit()
     finally:
         conn.close()
-    flash("Brand removed from the known list — it may reappear as a suggestion.", "ok")
-    return redirect(url_for("brands"))
+    return _done("Brand removed — it may reappear as a suggestion.", endpoint="brands")
 
 
 @app.route("/channels/<int:cid>/delete", methods=["POST"])
@@ -398,8 +400,7 @@ def channels_delete(cid):
         conn.commit()
     finally:
         conn.close()
-    flash("Channel removed (its videos and sponsorships too).", "ok")
-    return redirect(url_for("channels"))
+    return _done("Channel removed (its videos and sponsorships too).", endpoint="channels")
 
 
 @app.route("/scan", methods=["POST"])
@@ -438,8 +439,7 @@ def channels_status(cid):
         conn.commit()
     finally:
         conn.close()
-    flash("Marked as closed — you're working together now." if new == "closed" else "Moved back to prospects.", "ok")
-    return redirect(request.referrer or url_for("channels"))
+    return _done("Status updated.", endpoint="channels")
 
 
 @app.route("/scan/status")
