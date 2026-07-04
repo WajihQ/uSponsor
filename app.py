@@ -183,8 +183,20 @@ def channels_delete(cid):
 
 @app.route("/scan", methods=["POST"])
 def scan():
-    started = scraper.start_scan_in_background()
-    flash("Scan started." if started else "A scan is already running.", "ok")
+    mode = request.form.get("mode", "base")
+    if mode not in ("base", "backfill"):
+        mode = "base"
+    try:
+        years = min(max(int(request.form.get("years", 1)), 1), 10)
+    except ValueError:
+        years = 1
+    started = scraper.start_scan_in_background(mode=mode, years=years)
+    if not started:
+        flash("A scan is already running.", "err")
+    elif mode == "backfill":
+        flash(f"Backfill scan started — going back {years} year(s). This can take a while.", "ok")
+    else:
+        flash("Scan started.", "ok")
     return redirect(request.referrer or url_for("dashboard"))
 
 

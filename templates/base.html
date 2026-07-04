@@ -34,6 +34,7 @@ button, .btn { font:inherit; border:1px solid var(--ring); border-radius:8px;
   padding:7px 14px; cursor:pointer; background:var(--surface); color:var(--ink); }
 button.primary { background:var(--accent); color:var(--accent-ink); border-color:transparent; font-weight:600; }
 button.danger { color:var(--bad); }
+button:disabled { opacity:.55; cursor:default; }
 main { max-width:1180px; margin:0 auto; padding:20px 22px 60px; }
 .card { background:var(--surface); border:1px solid var(--ring); border-radius:12px;
         padding:16px 18px; margin-bottom:20px; }
@@ -64,7 +65,7 @@ td { padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top; 
     <a href="{{ url_for('channels') }}" class="{{ 'active' if request.endpoint == 'channels' }}">Channels</a>
   </nav>
   <span class="spacer"></span>
-  <span id="scanStatus">{% if scan.running %}<span class="dot"></span>Scanning {{ scan.current }} ({{ scan.done }}/{{ scan.total }})…{% endif %}</span>
+  <span id="scanStatus">{% if scan.running %}<span class="dot"></span>{{ 'Backfilling' if scan.mode == 'backfill' else 'Scanning' }} {{ scan.current }} ({{ scan.done }}/{{ scan.total }})…{% endif %}</span>
   <form method="post" action="{{ url_for('scan') }}">
     <button class="primary" {{ 'disabled' if scan.running }}>{{ 'Scanning…' if scan.running else 'Scan now' }}</button>
   </form>
@@ -83,8 +84,9 @@ td { padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top; 
     try {
       const s = await (await fetch('/scan/status')).json();
       if (s.running) {
-        el.innerHTML = '<span class="dot"></span>Scanning ' + (s.current || '…') +
-                       ' (' + s.done + '/' + s.total + ')…';
+        const verb = s.mode === 'backfill' ? 'Backfilling' : 'Scanning';
+        el.innerHTML = '<span class="dot"></span>';
+        el.append(verb + ' ' + (s.current || '…') + ' (' + s.done + '/' + s.total + ')…');
         setTimeout(() => tick(true), 2000);
       } else if (prev) {
         location.reload();   // scan just finished — show fresh data

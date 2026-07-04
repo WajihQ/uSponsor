@@ -42,6 +42,22 @@ Open http://127.0.0.1:5000
    - **Sponsorship log** — every detection with date, video link and the
      disclosure text found, filterable by time range / brand / creator.
 
+## Backfill scans
+
+**Scan now** only covers each channel's newest uploads. To pull in older
+history, use the **Backfill scan** card on the Channels page: pick how many
+years to go back (1–5) and start it. The backfill walks every channel's full
+upload feed newest-to-oldest, skips videos already in the database, and stops
+at the cutoff. Everything lands in the same database, so the dashboard's
+time-range filters cover the backfilled history too.
+
+Backfills are deliberately slow (a built-in 1.5s delay between video fetches
+plus one to two seconds per fetch) to avoid YouTube rate limiting — deep
+backfills over many channels can take hours. Each run also caps at 600
+fetched videos per channel as a safety valve; if a channel hits the cap, run
+the backfill again and it picks up where it left off. You typically backfill
+once, then let regular scans keep things current.
+
 ## Headless scanning (optional)
 
 Run scans on a schedule without opening the browser:
@@ -49,6 +65,7 @@ Run scans on a schedule without opening the browser:
 ```bash
 python scan.py                  # scan all channels in the DB
 python scan.py channels.txt     # import channels from a file, then scan
+python scan.py --backfill 2     # backfill scan going back 2 years
 ```
 
 Point Windows Task Scheduler or cron at it, then just open the dashboard.

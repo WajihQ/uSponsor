@@ -29,6 +29,27 @@
 </div>
 
 <div class="card">
+  <h2>Backfill scan</h2>
+  <p class="sub">The regular <b>Scan now</b> only covers each channel's newest uploads.
+     A backfill walks the full upload history of every tracked channel back to the
+     chosen cutoff, skipping videos already in the database.</p>
+  <form method="post" action="{{ url_for('scan') }}" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+    <input type="hidden" name="mode" value="backfill">
+    <label for="bf-years">Go back</label>
+    <select name="years" id="bf-years" style="font:inherit; padding:6px 8px; border:1px solid var(--ring); border-radius:8px; background:var(--surface); color:var(--ink)">
+      <option value="1">1 year</option>
+      <option value="2">2 years</option>
+      <option value="3">3 years</option>
+      <option value="5">5 years</option>
+    </select>
+    <button class="primary" {{ 'disabled' if scan.running }}>Start backfill</button>
+  </form>
+  <p class="hint">Fetching a description takes a second or two per video, plus a built-in
+     polite delay to avoid YouTube rate limiting — a deep backfill over many channels can
+     run for hours. It's safe to do this once and let regular scans take over from there.</p>
+</div>
+
+<div class="card">
   <h2>Tracked channels ({{ chans | length }})</h2>
   <p class="sub">Names resolve automatically on first scan. Removing a channel also removes its stored videos and sponsorships.</p>
   {% if chans %}
