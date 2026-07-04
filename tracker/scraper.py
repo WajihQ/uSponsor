@@ -10,7 +10,9 @@ Two scan modes, both writing to the same database:
   cutoff (N years back). Slower by nature, so it sleeps between fetches
   to stay under YouTube's radar.
 """
+import concurrent.futures as cf
 import datetime as dt
+import os
 import threading
 import time
 
@@ -21,6 +23,7 @@ from .detector import brand_key, detect_sponsors
 
 LOOKBACK_ENTRIES = 30       # base scan: how many newest uploads to list per channel
 MAX_NEW_PER_SCAN = 12       # base scan: cap detail fetches per channel per scan
+SCAN_WORKERS = max(1, int(os.environ.get("USPONSOR_WORKERS", "4")))  # base-scan parallelism
 BACKFILL_SLEEP = 1.5        # backfill: polite delay (seconds) between video fetches
 BACKFILL_HARD_CAP = 600     # backfill: safety cap on fetches per channel per run
 
@@ -73,7 +76,9 @@ def _list_uploads(channel_url, limit=LOOKBACK_ENTRIES):
 
 
 def _fetch_video(video_id):
-    with _ydl() as y:
+    # player_skip: we only need metadata (title/date/description), so skip the
+    # stream-resolution work — noticeably faster per video
+    with _ydl({"extractor_args": {"youtube": {"player_skip": ["js", "configs"]}}}) as y:
         return y.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
 
 
@@ -241,19 +246,36 @@ def run_scan(mode="base", years=1, target="all", force=False):
             _log("Nothing to scan — all targeted channels were scanned recently.")
         with _lock:
             STATE["total"] = len(channels)
-        for ch in channels:
+
+        def work(ch, wconn=None):
+            """Scan one channel with its own DB connection (thread-safe)."""
             label = ch["name"] or ch["input_url"]
-            _set_current(label)
+            own = wconn or db.connect()
             try:
                 if mode == "backfill":
-                    name, nv, ns = backfill_channel(conn, ch, cutoff)
+                    name, nv, ns = backfill_channel(own, ch, cutoff)
                 else:
-                    name, nv, ns = scan_channel(conn, ch)
+                    name, nv, ns = scan_channel(own, ch)
                 _log(f"{name}: {nv} new video(s), {ns} sponsorship(s)")
             except Exception as exc:
                 _log(f"{label}: FAILED — {exc}")
+            finally:
+                if own is not wconn:
+                    own.close()
             with _lock:
                 STATE["done"] += 1
+                STATE["current"] = f"{STATE['done']}/{STATE['total']} channels"
+
+        if mode == "backfill":
+            # sequential + polite delays: deep history is where rate limits bite
+            for ch in channels:
+                _set_current(ch["name"] or ch["input_url"])
+                work(ch, conn)
+        else:
+            # base scans are shallow, so a few channels in parallel is safe
+            # and cuts wall time roughly by the worker count
+            with cf.ThreadPoolExecutor(max_workers=SCAN_WORKERS) as pool:
+                list(pool.map(work, channels))
     finally:
         conn.close()
         with _lock:

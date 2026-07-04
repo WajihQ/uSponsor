@@ -42,6 +42,44 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
      older channel, use “Re-scan fresh” on the Channels page, then scan.</p>
 </div>
 
+{% if recent %}
+<div class="card" style="border-left:3px solid var(--accent)">
+  <h2>Recent suggestions — sponsored this week, not in your CRM ({{ recent | length }})</h2>
+  <p class="sub">Fresh leads: brands that appeared in the last 7 days of uploads and aren't in your known list.</p>
+  <div class="scroll">
+    <table>
+      <tr><th>Brand</th><th>Sponsorships (7 days)</th><th>Creators</th><th>Last seen</th><th></th></tr>
+      {% for s in recent %}
+      <tr>
+        <td>
+          <form method="post" action="{{ url_for('brands_rename') }}" class="rename" data-ajax="toast" data-done="Renamed — matching entries consolidated">
+            <input type="hidden" name="old_key" value="{{ s.brand_key }}">
+            <input type="text" name="new_name" value="{{ s.name }}"
+                   title="Edit to rename — using another brand's name merges them">
+            <button>Save</button>
+          </form>
+        </td>
+        <td class="num">{{ s.n }}</td>
+        <td class="num">{{ s.creators }}</td>
+        <td class="num">{{ s.last_seen }}</td>
+        <td style="white-space:nowrap">
+          <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked as known">
+            <input type="hidden" name="name" value="{{ s.name }}">
+            <button class="markbtn">Mark as known</button>
+          </form>
+          <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked erroneous — hidden everywhere">
+            <input type="hidden" name="name" value="{{ s.name }}">
+            <input type="hidden" name="kind" value="erroneous">
+            <button class="markbtn danger">Erroneous</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endif %}
+
 <div class="two">
   <div class="card">
     <h2>Suggestions — not in your CRM ({{ suggestions | length }})</h2>

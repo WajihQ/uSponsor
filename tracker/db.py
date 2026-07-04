@@ -55,9 +55,11 @@ CREATE INDEX IF NOT EXISTS idx_spons_brand ON sponsorships(brand_key);
 
 
 def connect():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")  # concurrent scan workers + web reads
+    conn.execute("PRAGMA busy_timeout = 10000")
     return conn
 
 

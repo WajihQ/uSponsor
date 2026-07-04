@@ -295,10 +295,22 @@ def brands():
             " WHERE s.brand_key NOT IN (SELECT brand_key FROM brands)"
             " GROUP BY s.brand_key ORDER BY n DESC, last_seen DESC"
         ).fetchall()
+        week_start = (dt.date.today() - dt.timedelta(days=6)).isoformat()
+        recent = conn.execute(
+            "SELECT s.brand_key, MIN(s.brand) AS name, COUNT(*) AS n,"
+            " COUNT(DISTINCT c.id) AS creators, MAX(v.upload_date) AS last_seen"
+            " FROM sponsorships s JOIN videos v ON v.id = s.video_ref"
+            " JOIN channels c ON c.id = v.channel_ref"
+            " WHERE s.brand_key NOT IN (SELECT brand_key FROM brands)"
+            " AND v.upload_date >= ?"
+            " GROUP BY s.brand_key ORDER BY last_seen DESC, n DESC",
+            (week_start,),
+        ).fetchall()
     finally:
         conn.close()
     return render_template(
-        "brands.html", known=known, erroneous=erroneous, suggestions=suggestions, scan=scraper.STATE
+        "brands.html", known=known, erroneous=erroneous, suggestions=suggestions,
+        recent=recent, scan=scraper.STATE,
     )
 
 

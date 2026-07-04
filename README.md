@@ -15,6 +15,10 @@ dashboard of who sponsored whom and when.
 - **Incremental**: scans only fetch videos not seen before (newest 30 listed,
   max 12 detail-fetched per channel per scan), so repeat runs are quick and
   easy on older hardware.
+- **Parallel**: base scans work several channels at once (4 workers by
+  default; set the `USPONSOR_WORKERS` environment variable to change it).
+  Backfills stay sequential with polite delays, since deep history is where
+  rate limits bite.
 
 ## Setup
 
@@ -66,7 +70,9 @@ Open http://127.0.0.1:5000
      defaults.
 7. **Brands tab** — import your CRM's brand list (.txt/.csv, one name per
    line). The tab suggests detected sponsors that aren't in your CRM yet,
-   with counts and last-seen dates; mark one as **known** and it stops
+   with counts and last-seen dates — plus a **Recent suggestions** box
+   highlighting brands that sponsored within the last 7 days and aren't in
+   your CRM yet (your freshest leads). Mark one as **known** and it stops
    being suggested, or **erroneous** and it disappears from the dashboard
    and suggestions entirely (reversible). Brand names in both columns are
    editable in place — renaming one onto another's name **consolidates**
