@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Channels — uSponsor{% endblock %}
+{% block style %}
+.forms { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+@media (max-width:760px) { .forms { grid-template-columns:1fr; } }
+.forms input[type=text] { font:inherit; width:100%; padding:8px 10px; margin-bottom:10px;
+  border:1px solid var(--ring); border-radius:8px; background:var(--page); color:var(--ink); }
+.forms input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--ink-2); }
+.hint { color:var(--muted); font-size:12px; margin:6px 0 0; }
+.pend { color:var(--muted); font-style:italic; }
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2>Add channels</h2>
+  <p class="sub">Paste a channel link, or import a .txt / .csv with one or more links per line.</p>
+  <div class="forms">
+    <form method="post" action="{{ url_for('channels_add') }}">
+      <input type="text" name="url" placeholder="https://www.youtube.com/@SomeCreator  or  @SomeCreator" required>
+      <button class="primary">Add channel</button>
+      <p class="hint">Accepts youtube.com/@handle, /channel/UC… links, or a bare @handle.</p>
+    </form>
+    <form method="post" action="{{ url_for('channels_import') }}" enctype="multipart/form-data">
+      <input type="file" name="file" accept=".txt,.csv" required>
+      <button class="primary">Import file</button>
+      <p class="hint">Every YouTube link or @handle found in the file gets added; duplicates are skipped.</p>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Tracked channels ({{ chans | length }})</h2>
+  <p class="sub">Names resolve automatically on first scan. Removing a channel also removes its stored videos and sponsorships.</p>
+  {% if chans %}
+  <div class="scroll">
+    <table>
+      <tr><th>Channel</th><th>Videos scanned</th><th>Sponsorships</th><th>Last scanned</th><th></th></tr>
+      {% for c in chans %}
+      <tr>
+        <td>
+          {% if c.name %}<b>{{ c.name }}</b><br><a href="{{ c.input_url }}" target="_blank" class="ev" style="font-size:12px">{{ c.input_url }}</a>
+          {% else %}<a href="{{ c.input_url }}" target="_blank">{{ c.input_url }}</a> <span class="pend">(pending first scan)</span>{% endif %}
+        </td>
+        <td class="num">{{ c.videos }}</td>
+        <td class="num">{{ c.spons }}</td>
+        <td class="num">{{ c.last_scanned or '—' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('channels_delete', cid=c.id) }}"
+                onsubmit="return confirm('Remove {{ (c.name or c.input_url) | e }} and all its data?')">
+            <button class="danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% else %}
+    <p class="sub">No channels yet — add one above, then hit <b>Scan now</b>.</p>
+  {% endif %}
+</div>
+{% endblock %}

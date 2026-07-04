@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}uSponsor{% endblock %}</title>
+<style>
+:root {
+  --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink-2:#52514e;
+  --muted:#898781; --grid:#e1e0d9; --axis:#c3c2b7; --ring:rgba(11,11,11,.10);
+  --accent:#2a78d6; --accent-ink:#fff; --good:#006300; --bad:#d03b3b;
+  --chip-bg:#eef4fc;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink-2:#c3c2b7;
+    --muted:#898781; --grid:#2c2c2a; --axis:#383835; --ring:rgba(255,255,255,.10);
+    --accent:#3987e5; --good:#0ca30c; --bad:#e66767;
+    --chip-bg:#1e2a3a;
+  }
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--page); color:var(--ink);
+       font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+header { display:flex; align-items:center; gap:18px; padding:12px 22px;
+         border-bottom:1px solid var(--grid); background:var(--surface);
+         position:sticky; top:0; z-index:5; flex-wrap:wrap; }
+header .logo { font-weight:700; font-size:16px; color:var(--ink); }
+header nav a { color:var(--ink-2); margin-right:14px; font-weight:500; }
+header nav a.active { color:var(--ink); border-bottom:2px solid var(--accent); padding-bottom:2px; }
+.spacer { flex:1; }
+button, .btn { font:inherit; border:1px solid var(--ring); border-radius:8px;
+  padding:7px 14px; cursor:pointer; background:var(--surface); color:var(--ink); }
+button.primary { background:var(--accent); color:var(--accent-ink); border-color:transparent; font-weight:600; }
+button.danger { color:var(--bad); }
+main { max-width:1180px; margin:0 auto; padding:20px 22px 60px; }
+.card { background:var(--surface); border:1px solid var(--ring); border-radius:12px;
+        padding:16px 18px; margin-bottom:20px; }
+.card h2 { margin:0 0 4px; font-size:15px; }
+.card .sub { color:var(--muted); font-size:12.5px; margin:0 0 12px; }
+.flash { padding:9px 14px; border-radius:8px; margin:0 0 14px; font-size:13.5px;
+         background:var(--surface); border:1px solid var(--ring); }
+.flash.err { color:var(--bad); }
+.flash.ok { color:var(--good); }
+table { border-collapse:collapse; width:100%; }
+th { text-align:left; font-size:12px; color:var(--muted); font-weight:600;
+     padding:6px 10px; border-bottom:1px solid var(--axis); white-space:nowrap; }
+td { padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top; }
+.num { font-variant-numeric:tabular-nums; }
+.scroll { overflow-x:auto; }
+#scanStatus { font-size:12.5px; color:var(--ink-2); }
+#scanStatus .dot { display:inline-block; width:8px; height:8px; border-radius:50%;
+  background:var(--accent); margin-right:6px; animation:pulse 1.2s infinite; }
+@keyframes pulse { 50% { opacity:.3; } }
+{% block style %}{% endblock %}
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">uSponsor</span>
+  <nav>
+    <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">Dashboard</a>
+    <a href="{{ url_for('channels') }}" class="{{ 'active' if request.endpoint == 'channels' }}">Channels</a>
+  </nav>
+  <span class="spacer"></span>
+  <span id="scanStatus">{% if scan.running %}<span class="dot"></span>Scanning {{ scan.current }} ({{ scan.done }}/{{ scan.total }})…{% endif %}</span>
+  <form method="post" action="{{ url_for('scan') }}">
+    <button class="primary" {{ 'disabled' if scan.running }}>{{ 'Scanning…' if scan.running else 'Scan now' }}</button>
+  </form>
+</header>
+<main>
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+<script>
+(function poll() {
+  const el = document.getElementById('scanStatus');
+  const wasRunning = {{ 'true' if scan.running else 'false' }};
+  async function tick(prev) {
+    try {
+      const s = await (await fetch('/scan/status')).json();
+      if (s.running) {
+        el.innerHTML = '<span class="dot"></span>Scanning ' + (s.current || '…') +
+                       ' (' + s.done + '/' + s.total + ')…';
+        setTimeout(() => tick(true), 2000);
+      } else if (prev) {
+        location.reload();   // scan just finished — show fresh data
+      }
+    } catch (e) { /* server gone; stop polling */ }
+  }
+  if (wasRunning) setTimeout(() => tick(true), 2000);
+  else tick(false);
+})();
+</script>
+</body>
+</html>

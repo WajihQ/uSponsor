@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block style %}
+.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:14px; margin-bottom:20px; }
+.tile { background:var(--surface); border:1px solid var(--ring); border-radius:12px; padding:14px 16px; }
+.tile .v { font-size:30px; font-weight:700; line-height:1.1; }
+.tile .l { color:var(--muted); font-size:12.5px; margin-top:2px; }
+
+.week { display:grid; grid-template-columns:150px repeat(7,1fr); min-width:820px; }
+.week .hd { font-size:11.5px; color:var(--muted); font-weight:600; padding:4px 6px;
+            border-bottom:1px solid var(--axis); text-align:center; }
+.week .hd.today { color:var(--accent); }
+.week .cr { font-size:12.5px; font-weight:600; padding:8px 6px 8px 0;
+            border-bottom:1px solid var(--grid); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.week .cell { border-bottom:1px solid var(--grid); border-left:1px solid var(--grid);
+              padding:5px 4px; display:flex; flex-direction:column; gap:4px; min-height:34px; }
+.chip { display:inline-block; background:var(--chip-bg); border:1px solid var(--ring);
+        border-left:3px solid var(--accent); border-radius:6px; padding:2px 7px;
+        font-size:11.5px; font-weight:600; color:var(--ink); max-width:100%;
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.chip:hover { text-decoration:none; border-color:var(--accent); }
+
+table.hm { width:auto; }
+.hm td { border:none; padding:2px; }
+.hm th { border:none; }
+.hm .rowlab { font-size:12.5px; font-weight:600; padding-right:10px; white-space:nowrap; }
+.hm .collab { font-size:11.5px; color:var(--muted); font-weight:600; padding:0 4px 6px;
+              text-align:center; vertical-align:bottom; max-width:90px; overflow:hidden;
+              text-overflow:ellipsis; white-space:nowrap; }
+.hm .c { width:56px; height:30px; border-radius:4px; text-align:center;
+         font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; }
+.hm .c0 { background:transparent; border:1px solid var(--grid); color:var(--muted); }
+.h1{background:#cde2fb;color:#0b0b0b}.h2{background:#9ec5f4;color:#0b0b0b}
+.h3{background:#6da7ec;color:#0b0b0b}.h4{background:#3987e5;color:#fff}
+.h5{background:#256abf;color:#fff}.h6{background:#184f95;color:#fff}
+.h7{background:#0d366b;color:#fff}
+@media (prefers-color-scheme: dark) {
+  /* reversed ramp on the dark surface: low counts recede, high counts pop */
+  .h1{background:#0d366b;color:#fff}.h2{background:#184f95;color:#fff}
+  .h3{background:#256abf;color:#fff}.h4{background:#3987e5;color:#fff}
+  .h5{background:#6da7ec;color:#0b0b0b}.h6{background:#9ec5f4;color:#0b0b0b}
+  .h7{background:#cde2fb;color:#0b0b0b}
+}
+.hm .tot { font-size:12px; color:var(--ink-2); padding-left:10px; font-variant-numeric:tabular-nums; }
+
+.filters { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+.filters select { font:inherit; padding:6px 8px; border:1px solid var(--ring);
+  border-radius:8px; background:var(--surface); color:var(--ink); }
+.ev { color:var(--muted); font-size:12px; }
+.empty { color:var(--muted); padding:26px 0; text-align:center; }
+{% endblock %}
+
+{% block content %}
+<div class="tiles">
+  <div class="tile"><div class="v num">{{ stats.week }}</div><div class="l">sponsorships this week</div></div>
+  <div class="tile"><div class="v num">{{ stats.brands }}</div><div class="l">brands seen (all time)</div></div>
+  <div class="tile"><div class="v num">{{ stats.creators }}</div><div class="l">creators tracked</div></div>
+  <div class="tile"><div class="v num">{{ stats.videos }}</div><div class="l">videos scanned</div></div>
+</div>
+
+<div class="card">
+  <h2>This week's sponsorships</h2>
+  <p class="sub">Each chip is a sponsored video — hover for the video title, click to open it.</p>
+  {% if week_grid %}
+  <div class="scroll">
+    <div class="week">
+      <div class="hd" style="text-align:left">Creator</div>
+      {% for d in day_list %}
+        <div class="hd {{ 'today' if loop.last }}">{{ d.strftime('%a %-d %b') }}</div>
+      {% endfor %}
+      {% for creator, cells in week_grid.items() %}
+        <div class="cr" title="{{ creator }}">{{ creator }}</div>
+        {% for d in day_list %}
+          <div class="cell">
+            {% for r in cells[d.isoformat()] %}
+              <a class="chip" href="{{ r.url }}" target="_blank" title="{{ r.title }}">{{ r.brand }}</a>
+            {% endfor %}
+          </div>
+        {% endfor %}
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+    <div class="empty">No sponsorships detected in the last 7 days. Run a scan, or check back after your creators upload.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Brand × creator frequency</h2>
+  <p class="sub">How many times each brand sponsored each creator ({{ ranges[days] | lower }}). Top 12 brands shown.</p>
+  {% if heatmap.rows %}
+  <div class="scroll">
+    <table class="hm">
+      <tr>
+        <th></th>
+        {% for cr in heatmap.creators %}<td class="collab" title="{{ cr }}">{{ cr }}</td>{% endfor %}
+        <td class="collab">total</td>
+      </tr>
+      {% for row in heatmap.rows %}
+      <tr>
+        <td class="rowlab">{{ row.brand }}</td>
+        {% for n in row.cells %}
+          {% if n == 0 %}
+            <td class="c c0"></td>
+          {% else %}
+            {% set b = ((n / heatmap.max) * 6) | round(0, 'ceil') | int + 1 %}
+            <td class="c h{{ [b, 7] | min }}" title="{{ row.brand }} × {{ heatmap.creators[loop.index0] }}: {{ n }}">{{ n }}</td>
+          {% endif %}
+        {% endfor %}
+        <td class="tot">{{ row.total }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% else %}
+    <div class="empty">Nothing yet — add channels and hit <b>Scan now</b>.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Sponsorship log</h2>
+  <p class="sub">Every detected sponsorship, newest first.</p>
+  <form class="filters" method="get">
+    <select name="days" onchange="this.form.submit()">
+      {% for k, label in ranges.items() %}
+        <option value="{{ k }}" {{ 'selected' if k == days }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <select name="brand" onchange="this.form.submit()">
+      <option value="">All brands</option>
+      {% for b in all_brands %}
+        <option value="{{ b.brand_key }}" {{ 'selected' if b.brand_key == f_brand }}>{{ b.brand }}</option>
+      {% endfor %}
+    </select>
+    <select name="creator" onchange="this.form.submit()">
+      <option value="">All creators</option>
+      {% for c in all_creators %}
+        <option value="{{ c.id }}" {{ 'selected' if c.id|string == f_creator }}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+    {% if f_brand or f_creator %}<a href="{{ url_for('dashboard', days=days) }}">clear</a>{% endif %}
+  </form>
+  {% if rows %}
+  <div class="scroll">
+    <table>
+      <tr><th>Date</th><th>Brand</th><th>Creator</th><th>Video</th><th>Disclosure found</th></tr>
+      {% for r in rows %}
+      <tr>
+        <td class="num" style="white-space:nowrap">{{ r.upload_date or '—' }}</td>
+        <td><b>{{ r.brand }}</b></td>
+        <td>{{ r.creator }}</td>
+        <td><a href="{{ r.url }}" target="_blank">{{ r.title }}</a></td>
+        <td class="ev">…{{ r.evidence }}…</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% else %}
+    <div class="empty">No results for this filter.</div>
+  {% endif %}
+</div>
+{% endblock %}
