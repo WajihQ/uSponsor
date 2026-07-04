@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
 sponsors.db
+sponsors.db-wal
+sponsors.db-shm
 .venv/
 venv/
