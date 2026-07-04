@@ -19,7 +19,21 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
     <input type="file" name="file" accept=".txt,.csv" required style="margin:0">
     <button class="primary">Import brands</button>
   </form>
-  <p class="hint">Matching ignores case and punctuation, so “NordVPN” in your CRM matches “Nord VPN” from a video description.</p>
+  <p class="hint">Matching ignores case and punctuation, so “NordVPN” in your CRM matches “Nord VPN” from a video description.
+     Known brands also boost detection: a mention of one near sponsor language gets caught even
+     when the disclosure is phrased unusually.</p>
+</div>
+
+<div class="card">
+  <h2>Re-run detection</h2>
+  <p class="sub">Applies the current detector and your known-brand list to every stored video
+     description — no YouTube requests, takes seconds. Run this after importing brands or
+     updating the app to recover sponsorships that were missed on the original scan.</p>
+  <form method="post" action="{{ url_for('redetect') }}">
+    <button class="primary">Re-run detection</button>
+  </form>
+  <p class="hint">Only videos scanned by recent versions have their descriptions stored. To recover an
+     older channel, use “Re-scan fresh” on the Channels page, then scan.</p>
 </div>
 
 <div class="two">
@@ -37,10 +51,15 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
           <td class="num">{{ s.n }}</td>
           <td class="num">{{ s.creators }}</td>
           <td class="num">{{ s.last_seen or '—' }}</td>
-          <td>
+          <td style="white-space:nowrap">
             <form method="post" action="{{ url_for('brands_mark') }}">
               <input type="hidden" name="name" value="{{ s.name }}">
               <button class="markbtn" title="Add to known brands — stops suggesting it">Mark as known</button>
+            </form>
+            <form method="post" action="{{ url_for('brands_mark') }}">
+              <input type="hidden" name="name" value="{{ s.name }}">
+              <input type="hidden" name="kind" value="erroneous">
+              <button class="markbtn danger" title="Not a real brand — hide it everywhere">Erroneous</button>
             </form>
           </td>
         </tr>
@@ -74,6 +93,29 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
     </div>
     {% else %}
       <p class="sub">No known brands yet — import your CRM list above.</p>
+    {% endif %}
+
+    <h2 style="margin-top:22px">Erroneous ({{ erroneous | length }})</h2>
+    <p class="sub">False detections you've flagged — hidden from the dashboard and suggestions.</p>
+    {% if erroneous %}
+    <div class="scroll">
+      <table>
+        <tr><th>Text</th><th>Hidden rows</th><th></th></tr>
+        {% for b in erroneous %}
+        <tr>
+          <td class="count">{{ b.name }}</td>
+          <td class="num count">{{ b.hits or '—' }}</td>
+          <td>
+            <form method="post" action="{{ url_for('brands_delete', bid=b.id) }}">
+              <button class="markbtn" title="Un-flag — shows up again">Restore</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    {% else %}
+      <p class="sub">Nothing flagged yet. Use the “Erroneous” button on a suggestion.</p>
     {% endif %}
   </div>
 </div>

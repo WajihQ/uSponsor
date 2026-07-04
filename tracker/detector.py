@@ -32,7 +32,20 @@ PATTERNS = [
     re.compile(r"\btoday'?s\s+(?:video\s+)?sponsor(?:\s+is)?\s*[,:]?\s+" + _BLOB, re.I),
     # "use code FOO at X"
     re.compile(r"\buse\s+(?:code|coupon)\s+\S{2,20}\s+at\s+" + _BLOB, re.I),
+    # "60% off X" — deal-style disclosures ("get 60% off an annual Incogni plan")
+    re.compile(
+        r"\d{1,3}%\s+(?:off|discount\s+on)\s+(?:your\s+|an?\s+|the\s+)?"
+        r"(?:first\s+|annual\s+|monthly\s+|yearly\s+|new\s+)?"
+        r"(?:order\s+of\s+|purchase\s+of\s+|subscription\s+(?:to|of)\s+)?" + _BLOB,
+        re.I,
+    ),
 ]
+
+# Sponsor-ish context words for the known-brand assist pass.
+_CONTEXT = re.compile(
+    r"sponsor|partner|paid promotion|#ad\b|\bad\b|promo|discount|coupon|use code|% off|deal|offer",
+    re.I,
+)
 
 # Words that never end a brand name — trimmed off the tail of a capture.
 _TRAILING_STOP = {
@@ -40,6 +53,7 @@ _TRAILING_STOP = {
     "who", "that", "is", "are", "was", "were", "their", "its", "this",
     "today", "here", "more", "all", "my", "our", "your", "get", "use",
     "check", "out", "now", "over", "via", "from", "or", "so", "as", "by",
+    "plan", "plans", "subscription", "order", "purchase", "membership", "deal",
 }
 
 # Captures that mean "the audience", not a brand.
@@ -47,6 +61,8 @@ _REJECT_SUBSTR = (
     "patreon", "patron", "member", "viewer", "subscrib", "supporter",
     "you guys", "everyone", "you all", "y'all", "my sponsor", "our sponsor",
     "no one", "nobody", "watching", "these companies", "the following",
+    "link below", "links below", "description below", "the description",
+    "season partner", "our partners", "our sponsors",
 )
 _REJECT_EXACT = {"me", "you", "us", "them", "all", "everybody", "yourself", "himself", "herself",
                  "http", "https", "www", "link", "links", "the link", "checkout", "check out",
@@ -96,8 +112,14 @@ def _clean(blob):
     return s
 
 
-def detect_sponsors(text):
-    """Return [(brand, evidence)] found in a description. Deduped by brand_key."""
+def detect_sponsors(text, known_brands=()):
+    """Return [(brand, evidence)] found in a description. Deduped by brand_key.
+
+    known_brands is an optional [(name, key)] list (the user's CRM). As a
+    second pass, any known brand mentioned in the text within sponsor-ish
+    context (sponsor/partner/code/% off/…) is picked up even when the
+    disclosure phrasing doesn't match the patterns above.
+    """
     if not text:
         return []
     found = {}
@@ -112,4 +134,15 @@ def detect_sponsors(text):
             start = max(0, m.start() - 30)
             evidence = re.sub(r"\s+", " ", text[start : m.end() + 30]).strip()
             found[key] = (brand, evidence)
+    for name, key in known_brands:
+        if key in found:
+            continue
+        m = re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", text, re.I)
+        if not m:
+            continue
+        window = text[max(0, m.start() - 120) : m.end() + 120]
+        if _CONTEXT.search(window):
+            start = max(0, m.start() - 40)
+            evidence = re.sub(r"\s+", " ", text[start : m.end() + 60]).strip()
+            found[key] = (name, evidence)
     return list(found.values())

@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS brands (
     id        INTEGER PRIMARY KEY,
     name      TEXT NOT NULL,
     brand_key TEXT UNIQUE NOT NULL,               -- same normalization as sponsorships
+    kind      TEXT NOT NULL DEFAULT 'known',      -- 'known' | 'erroneous'
     added_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -34,7 +35,8 @@ CREATE TABLE IF NOT EXISTS videos (
     title       TEXT,
     url         TEXT,
     upload_date TEXT,                   -- YYYY-MM-DD
-    scanned_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    scanned_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    description TEXT                    -- kept so detection can be re-run offline
 );
 
 CREATE TABLE IF NOT EXISTS sponsorships (
@@ -71,6 +73,12 @@ def init_db():
             conn.execute("ALTER TABLE channels ADD COLUMN subniche TEXT")
         if "agency" not in cols:
             conn.execute("ALTER TABLE channels ADD COLUMN agency TEXT")
+        vcols = {r["name"] for r in conn.execute("PRAGMA table_info(videos)")}
+        if "description" not in vcols:
+            conn.execute("ALTER TABLE videos ADD COLUMN description TEXT")
+        bcols = {r["name"] for r in conn.execute("PRAGMA table_info(brands)")}
+        if bcols and "kind" not in bcols:
+            conn.execute("ALTER TABLE brands ADD COLUMN kind TEXT NOT NULL DEFAULT 'known'")
         # purge false-positive "brands" stored by older detector versions
         conn.execute(
             "DELETE FROM sponsorships WHERE brand_key IN"
@@ -187,8 +195,11 @@ def import_channel_lines(text):
     return added, updated, skipped
 
 
-def import_brand_lines(text):
-    """Import CRM brand names, one or more per line. Returns (added, skipped)."""
+def import_brand_lines(text, kind="known"):
+    """Import brand names ('known' or 'erroneous'), one or more per line.
+
+    A name already present has its kind updated instead. Returns (added, skipped).
+    """
     from .detector import brand_key
     added, skipped = [], []
     with connect() as conn:
@@ -202,7 +213,17 @@ def import_brand_lines(text):
                     skipped.append(name)
                     continue
                 cur = conn.execute(
-                    "INSERT OR IGNORE INTO brands (name, brand_key) VALUES (?, ?)", (name, key)
+                    "INSERT INTO brands (name, brand_key, kind) VALUES (?, ?, ?)"
+                    " ON CONFLICT(brand_key) DO UPDATE SET kind = excluded.kind",
+                    (name, key, kind),
                 )
                 (added if cur.rowcount else skipped).append(name)
     return added, skipped
+
+
+def known_brand_names(conn):
+    """[(display name, brand_key)] of CRM/known brands, for assisted detection."""
+    return [
+        (r["name"], r["brand_key"])
+        for r in conn.execute("SELECT name, brand_key FROM brands WHERE kind = 'known'")
+    ]

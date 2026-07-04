@@ -42,7 +42,8 @@ def dashboard():
         # One set of filter conditions drives every widget on the page.
         # The time floor is parameterized so the week grid can use its own window.
         cond = " AND ".join(
-            ["v.upload_date >= ?"]
+            ["v.upload_date >= ?",
+             "s.brand_key NOT IN (SELECT brand_key FROM brands WHERE kind = 'erroneous')"]
             + (["s.brand_key = ?"] if f_brand else [])
             + (["c.id = ?"] if f_creator else [])
             + (["c.status = ?"] if f_status else [])
@@ -99,7 +100,9 @@ def dashboard():
         }
 
         all_brands = conn.execute(
-            "SELECT brand_key, MIN(brand) AS brand FROM sponsorships GROUP BY brand_key ORDER BY brand"
+            "SELECT brand_key, MIN(brand) AS brand FROM sponsorships"
+            " WHERE brand_key NOT IN (SELECT brand_key FROM brands WHERE kind = 'erroneous')"
+            " GROUP BY brand_key ORDER BY brand"
         ).fetchall()
         all_creators = conn.execute(
             "SELECT id, COALESCE(name, input_url) AS name, status FROM channels ORDER BY name"
@@ -245,7 +248,12 @@ def brands():
         known = conn.execute(
             "SELECT b.*, "
             " (SELECT COUNT(*) FROM sponsorships s WHERE s.brand_key = b.brand_key) AS hits"
-            " FROM brands b ORDER BY b.name COLLATE NOCASE"
+            " FROM brands b WHERE b.kind = 'known' ORDER BY b.name COLLATE NOCASE"
+        ).fetchall()
+        erroneous = conn.execute(
+            "SELECT b.*, "
+            " (SELECT COUNT(*) FROM sponsorships s WHERE s.brand_key = b.brand_key) AS hits"
+            " FROM brands b WHERE b.kind = 'erroneous' ORDER BY b.name COLLATE NOCASE"
         ).fetchall()
         suggestions = conn.execute(
             "SELECT s.brand_key, MIN(s.brand) AS name, COUNT(*) AS n,"
@@ -257,7 +265,9 @@ def brands():
         ).fetchall()
     finally:
         conn.close()
-    return render_template("brands.html", known=known, suggestions=suggestions, scan=scraper.STATE)
+    return render_template(
+        "brands.html", known=known, erroneous=erroneous, suggestions=suggestions, scan=scraper.STATE
+    )
 
 
 @app.route("/brands/import", methods=["POST"])
@@ -274,10 +284,36 @@ def brands_import():
 @app.route("/brands/mark", methods=["POST"])
 def brands_mark():
     name = request.form.get("name", "").strip()
+    kind = request.form.get("kind", "known")
+    if kind not in ("known", "erroneous"):
+        kind = "known"
     if name:
-        db.import_brand_lines(name)
-        flash(f"“{name}” marked as known — it won't be suggested again.", "ok")
+        db.import_brand_lines(name, kind=kind)
+        if kind == "erroneous":
+            flash(f"“{name}” marked erroneous — hidden from the dashboard and suggestions.", "ok")
+        else:
+            flash(f"“{name}” marked as known — it won't be suggested again.", "ok")
     return redirect(url_for("brands"))
+
+
+@app.route("/redetect", methods=["POST"])
+def redetect():
+    videos, new = scraper.rerun_detection()
+    flash(f"Re-ran detection over {videos} stored description(s) — found {new} new sponsorship(s).", "ok")
+    return redirect(request.referrer or url_for("brands"))
+
+
+@app.route("/channels/<int:cid>/reset", methods=["POST"])
+def channels_reset(cid):
+    conn = db.connect()
+    try:
+        conn.execute("DELETE FROM videos WHERE channel_ref = ?", (cid,))
+        conn.execute("UPDATE channels SET last_scanned = NULL WHERE id = ?", (cid,))
+        conn.commit()
+    finally:
+        conn.close()
+    flash("Channel videos cleared — the next scan re-fetches them fresh (with descriptions stored).", "ok")
+    return redirect(url_for("channels"))
 
 
 @app.route("/brands/<int:bid>/delete", methods=["POST"])

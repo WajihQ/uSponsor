@@ -77,21 +77,21 @@ def _fetch_video(video_id):
         return y.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
 
 
-def _store_video(conn, ch, v):
+def _store_video(conn, ch, v, known=()):
     """Insert a fetched video + its detected sponsorships. Returns (stored?, n_spons, date)."""
     raw_date = v.get("upload_date")  # YYYYMMDD
     upload_date = (
         dt.datetime.strptime(raw_date, "%Y%m%d").date().isoformat() if raw_date else None
     )
     cur = conn.execute(
-        "INSERT OR IGNORE INTO videos (video_id, channel_ref, title, url, upload_date)"
-        " VALUES (?, ?, ?, ?, ?)",
-        (v["id"], ch["id"], v.get("title"), v.get("webpage_url"), upload_date),
+        "INSERT OR IGNORE INTO videos (video_id, channel_ref, title, url, upload_date, description)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (v["id"], ch["id"], v.get("title"), v.get("webpage_url"), upload_date, v.get("description")),
     )
     if not cur.rowcount:
         return False, 0, upload_date
     n = 0
-    for brand, evidence in detect_sponsors(v.get("description")):
+    for brand, evidence in detect_sponsors(v.get("description"), known):
         conn.execute(
             "INSERT OR IGNORE INTO sponsorships (video_ref, brand, brand_key, evidence)"
             " VALUES (?, ?, ?, ?)",
@@ -100,6 +100,33 @@ def _store_video(conn, ch, v):
         n += 1
     conn.commit()
     return True, n, upload_date
+
+
+def rerun_detection():
+    """Re-apply the current detector (+ known brands) to stored descriptions.
+
+    Purely offline — no YouTube requests. Only adds sponsorships that
+    weren't already recorded. Returns (videos_checked, new_sponsorships).
+    """
+    conn = db.connect()
+    try:
+        known = db.known_brand_names(conn)
+        videos = conn.execute(
+            "SELECT id, description FROM videos WHERE description IS NOT NULL AND description != ''"
+        ).fetchall()
+        new = 0
+        for v in videos:
+            for brand, evidence in detect_sponsors(v["description"], known):
+                cur = conn.execute(
+                    "INSERT OR IGNORE INTO sponsorships (video_ref, brand, brand_key, evidence)"
+                    " VALUES (?, ?, ?, ?)",
+                    (v["id"], brand, brand_key(brand), evidence),
+                )
+                new += cur.rowcount
+        conn.commit()
+        return len(videos), new
+    finally:
+        conn.close()
 
 
 def _update_channel_meta(conn, ch, channel_id, name):
@@ -124,8 +151,9 @@ def scan_channel(conn, ch):
     """Base scan of one channel row; returns (name, new_videos, new_sponsorships)."""
     channel_id, name, entries = _list_uploads(ch["input_url"])
     _update_channel_meta(conn, ch, channel_id, name)
-    known = _known_ids(conn, ch)
-    fresh = [e for e in entries if e["id"] not in known][:MAX_NEW_PER_SCAN]
+    seen = _known_ids(conn, ch)
+    fresh = [e for e in entries if e["id"] not in seen][:MAX_NEW_PER_SCAN]
+    known = db.known_brand_names(conn)
 
     new_videos = new_spons = 0
     for entry in fresh:
@@ -134,7 +162,7 @@ def scan_channel(conn, ch):
         except Exception as exc:  # video may be private/removed; keep going
             _log(f"  ! skipped {entry['id']}: {exc}")
             continue
-        stored, n, _ = _store_video(conn, ch, v)
+        stored, n, _ = _store_video(conn, ch, v, known)
         new_videos += stored
         new_spons += n
     return name, new_videos, new_spons
@@ -148,12 +176,13 @@ def backfill_channel(conn, ch, cutoff):
     """
     channel_id, name, entries = _list_uploads(ch["input_url"], limit=None)
     _update_channel_meta(conn, ch, channel_id, name)
-    known = _known_ids(conn, ch)
+    seen = _known_ids(conn, ch)
+    known = db.known_brand_names(conn)
 
     new_videos = new_spons = fetched = 0
     for entry in entries:
-        if entry["id"] in known:
-            stored_date = known[entry["id"]]
+        if entry["id"] in seen:
+            stored_date = seen[entry["id"]]
             if stored_date and stored_date < cutoff.isoformat():
                 break  # already walked past the cutoff on a previous run
             continue
@@ -166,7 +195,7 @@ def backfill_channel(conn, ch, cutoff):
             _log(f"  ! skipped {entry['id']}: {exc}")
             continue
         fetched += 1
-        stored, n, upload_date = _store_video(conn, ch, v)
+        stored, n, upload_date = _store_video(conn, ch, v, known)
         new_videos += stored
         new_spons += n
         _set_current(f"{name} — {new_videos} video(s) so far ({upload_date or '?'})")

@@ -104,7 +104,11 @@ td form { display:inline-block; margin-right:6px; }
         <td class="num">{{ c.videos }}</td>
         <td class="num">{{ c.spons }}</td>
         <td class="num">{{ c.last_scanned or '—' }}</td>
-        <td>
+        <td style="white-space:nowrap">
+          <form method="post" action="{{ url_for('channels_reset', cid=c.id) }}"
+                onsubmit="return confirm('Clear stored videos for {{ (c.name or c.input_url) | e }}? The next scan re-fetches them fresh.')">
+            <button title="Clear stored videos so the next scan re-fetches them (with descriptions)">Re-scan fresh</button>
+          </form>
           <form method="post" action="{{ url_for('channels_delete', cid=c.id) }}"
                 onsubmit="return confirm('Remove {{ (c.name or c.input_url) | e }} and all its data?')">
             <button class="danger">Remove</button>

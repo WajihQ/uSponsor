@@ -64,8 +64,17 @@ Open http://127.0.0.1:5000
      disclosure text found.
 7. **Brands tab** — import your CRM's brand list (.txt/.csv, one name per
    line). The tab suggests detected sponsors that aren't in your CRM yet,
-   with counts and last-seen dates; mark one as known and it stops being
-   suggested. Matching ignores case/punctuation.
+   with counts and last-seen dates; mark one as **known** and it stops
+   being suggested, or **erroneous** and it disappears from the dashboard
+   and suggestions entirely (reversible). Matching ignores case and
+   punctuation. Known brands also boost detection: a mention near sponsor
+   language ("use code…", "% off", "partner") is caught even when the
+   disclosure phrasing is unusual.
+8. Video descriptions are stored in the database, so **Re-run detection**
+   (Brands tab) can re-apply the current detector and brand list to
+   everything already scanned — offline, in seconds. Use **Re-scan fresh**
+   on a channel to re-fetch videos scanned by older versions that didn't
+   store descriptions.
 
 ## Backfill scans
 
