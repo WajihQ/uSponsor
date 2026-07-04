@@ -176,8 +176,14 @@ def backfill_channel(conn, ch, cutoff):
     return name, new_videos, new_spons
 
 
-def run_scan(mode="base", years=1):
-    """Scan every channel in the DB. Safe to call from a background thread."""
+def run_scan(mode="base", years=1, target="all", force=False):
+    """Scan channels in the DB. Safe to call from a background thread.
+
+    target: "all" or "closed" (only channels marked closed).
+    Base scans skip channels scanned within the last 24 hours unless
+    force=True; backfills always visit every targeted channel (they skip
+    already-stored videos anyway).
+    """
     with _lock:
         if STATE["running"]:
             return
@@ -187,7 +193,23 @@ def run_scan(mode="base", years=1):
         _log(f"Backfill scan: going back {years} year(s), to {cutoff.isoformat()}")
     conn = db.connect()
     try:
-        channels = conn.execute("SELECT * FROM channels ORDER BY id").fetchall()
+        where = []
+        if target == "closed":
+            where.append("status = 'closed'")
+        if mode == "base" and not force:
+            where.append("(last_scanned IS NULL OR last_scanned <= datetime('now', '-24 hours'))")
+        sql = "SELECT * FROM channels"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        channels = conn.execute(sql + " ORDER BY id").fetchall()
+        total_all = conn.execute(
+            "SELECT COUNT(*) FROM channels" + (" WHERE status = 'closed'" if target == "closed" else "")
+        ).fetchone()[0]
+        skipped = total_all - len(channels)
+        if skipped:
+            _log(f"Skipping {skipped} channel(s) scanned within the last 24 hours")
+        if not channels:
+            _log("Nothing to scan — all targeted channels were scanned recently.")
         with _lock:
             STATE["total"] = len(channels)
         for ch in channels:
@@ -211,10 +233,14 @@ def run_scan(mode="base", years=1):
             STATE["finished_at"] = dt.datetime.now().strftime("%H:%M:%S")
 
 
-def start_scan_in_background(mode="base", years=1):
+def start_scan_in_background(mode="base", years=1, target="all", force=False):
     """Kick off a scan thread if one isn't already running. Returns started?"""
     with _lock:
         if STATE["running"]:
             return False
-    threading.Thread(target=run_scan, kwargs={"mode": mode, "years": years}, daemon=True).start()
+    threading.Thread(
+        target=run_scan,
+        kwargs={"mode": mode, "years": years, "target": target, "force": force},
+        daemon=True,
+    ).start()
     return True

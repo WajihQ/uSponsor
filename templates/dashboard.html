@@ -46,6 +46,8 @@ table.hm { width:auto; }
 .filters select { font:inherit; padding:6px 8px; border:1px solid var(--ring);
   border-radius:8px; background:var(--surface); color:var(--ink); }
 .ev { color:var(--muted); font-size:12px; }
+.badge { display:inline-block; font-size:10.5px; font-weight:700; border-radius:999px;
+         padding:0 7px; margin-left:5px; color:var(--good); border:1px solid var(--good); }
 .empty { color:var(--muted); padding:26px 0; text-align:center; }
 {% endblock %}
 
@@ -68,7 +70,7 @@ table.hm { width:auto; }
         <div class="hd {{ 'today' if loop.last }}">{{ d.strftime('%a') }} {{ d.day }} {{ d.strftime('%b') }}</div>
       {% endfor %}
       {% for creator, cells in week_grid.items() %}
-        <div class="cr" title="{{ creator }}">{{ creator }}</div>
+        <div class="cr" title="{{ creator }}">{{ creator }}{% if creator in closed_names %}<span class="badge">✓</span>{% endif %}</div>
         {% for d in day_list %}
           <div class="cell">
             {% for r in cells[d.isoformat()] %}
@@ -134,10 +136,14 @@ table.hm { width:auto; }
     <select name="creator" onchange="this.form.submit()">
       <option value="">All creators</option>
       {% for c in all_creators %}
-        <option value="{{ c.id }}" {{ 'selected' if c.id|string == f_creator }}>{{ c.name }}</option>
+        <option value="{{ c.id }}" {{ 'selected' if c.id|string == f_creator }}>{{ c.name }}{{ ' ✓' if c.status == 'closed' }}</option>
       {% endfor %}
     </select>
-    {% if f_brand or f_creator %}<a href="{{ url_for('dashboard', days=days) }}">clear</a>{% endif %}
+    <select name="status" onchange="this.form.submit()">
+      <option value="">Prospects &amp; closed</option>
+      <option value="closed" {{ 'selected' if f_status == 'closed' }}>Closed only ✓</option>
+    </select>
+    {% if f_brand or f_creator or f_status %}<a href="{{ url_for('dashboard', days=days) }}">clear</a>{% endif %}
   </form>
   {% if rows %}
   <div class="scroll">

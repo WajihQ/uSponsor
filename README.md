@@ -33,8 +33,16 @@ Open http://127.0.0.1:5000
    they live in the app's database, not in code.
 2. Hit **Scan now** (top right). Progress shows in the header; the page
    refreshes when done. First scan of a channel pulls its recent uploads;
-   later scans only pick up new videos.
-3. **Dashboard** shows:
+   later scans only pick up new videos. Channels scanned within the last
+   24 hours are skipped automatically — so after adding a batch of new
+   channels, a scan only touches the new ones. The dropdown next to the
+   button picks the target: **All channels**, **Closed only**, or
+   **Force all** (ignores the 24-hour rule).
+3. Mark influencers you've signed as **closed** on the Channels page
+   ("Mark closed" / "Reopen"). Closed creators get a ✓ badge across the
+   app, the dashboard log can filter to closed-only, and both scan types
+   can target just your closed roster.
+4. **Dashboard** shows:
    - **This week's sponsorships** — creator × day grid of brand chips; click
      a chip to open the video.
    - **Brand × creator frequency** — heatmap of how many times each brand

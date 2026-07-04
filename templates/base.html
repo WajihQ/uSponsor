@@ -66,7 +66,12 @@ td { padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top; 
   </nav>
   <span class="spacer"></span>
   <span id="scanStatus">{% if scan.running %}<span class="dot"></span>{{ 'Backfilling' if scan.mode == 'backfill' else 'Scanning' }} {{ scan.current }} ({{ scan.done }}/{{ scan.total }})…{% endif %}</span>
-  <form method="post" action="{{ url_for('scan') }}">
+  <form method="post" action="{{ url_for('scan') }}" style="display:flex; gap:8px; align-items:center">
+    <select name="target" style="font:inherit; padding:6px 8px; border:1px solid var(--ring); border-radius:8px; background:var(--surface); color:var(--ink)">
+      <option value="all">All channels</option>
+      <option value="closed">Closed only</option>
+      <option value="all_force">Force all (ignore 24h rule)</option>
+    </select>
     <button class="primary" {{ 'disabled' if scan.running }}>{{ 'Scanning…' if scan.running else 'Scan now' }}</button>
   </form>
 </header>

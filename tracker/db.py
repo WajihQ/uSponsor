@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS channels (
     channel_id  TEXT UNIQUE,            -- YouTube channel id, filled on first scan
     name        TEXT,                   -- resolved channel name
     added_at    TEXT NOT NULL DEFAULT (datetime('now')),
-    last_scanned TEXT
+    last_scanned TEXT,
+    status      TEXT NOT NULL DEFAULT 'prospect'  -- 'prospect' | 'closed'
 );
 
 CREATE TABLE IF NOT EXISTS videos (
@@ -51,6 +52,10 @@ def connect():
 def init_db():
     with connect() as conn:
         conn.executescript(SCHEMA)
+        # migrate databases created before the status column existed
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(channels)")}
+        if "status" not in cols:
+            conn.execute("ALTER TABLE channels ADD COLUMN status TEXT NOT NULL DEFAULT 'prospect'")
 
 
 def add_channel(url):

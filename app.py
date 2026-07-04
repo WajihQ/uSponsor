@@ -29,6 +29,9 @@ def dashboard():
         days = "30"
     f_brand = request.args.get("brand", "")
     f_creator = request.args.get("creator", "")
+    f_status = request.args.get("status", "")
+    if f_status not in ("", "closed"):
+        f_status = ""
     since = _since(days)
 
     conn = db.connect()
@@ -46,6 +49,9 @@ def dashboard():
         if f_creator:
             base += " AND c.id = ?"
             args.append(int(f_creator))
+        if f_status:
+            base += " AND c.status = ?"
+            args.append(f_status)
 
         rows = conn.execute(
             "SELECT s.brand, s.brand_key, s.evidence, v.title, v.url, v.upload_date,"
@@ -69,7 +75,7 @@ def dashboard():
         # last-7-days grid (always the trailing week, independent of filter)
         week_start = (dt.date.today() - dt.timedelta(days=6)).isoformat()
         week = conn.execute(
-            "SELECT s.brand, v.title, v.url, v.upload_date, c.name AS creator "
+            "SELECT s.brand, v.title, v.url, v.upload_date, c.name AS creator, c.status "
             "FROM sponsorships s JOIN videos v ON v.id = s.video_ref"
             " JOIN channels c ON c.id = v.channel_ref"
             " WHERE v.upload_date >= ? ORDER BY c.name, v.upload_date",
@@ -90,8 +96,9 @@ def dashboard():
             "SELECT brand_key, MIN(brand) AS brand FROM sponsorships GROUP BY brand_key ORDER BY brand"
         ).fetchall()
         all_creators = conn.execute(
-            "SELECT id, COALESCE(name, input_url) AS name FROM channels ORDER BY name"
+            "SELECT id, COALESCE(name, input_url) AS name, status FROM channels ORDER BY name"
         ).fetchall()
+        closed_names = {r["name"] for r in all_creators if r["status"] == "closed"}
     finally:
         conn.close()
 
@@ -129,8 +136,8 @@ def dashboard():
         "dashboard.html",
         rows=rows, stats=stats, heatmap=heatmap,
         week_grid=week_grid, day_list=day_list,
-        ranges=RANGES, days=days, f_brand=f_brand, f_creator=f_creator,
-        all_brands=all_brands, all_creators=all_creators,
+        ranges=RANGES, days=days, f_brand=f_brand, f_creator=f_creator, f_status=f_status,
+        all_brands=all_brands, all_creators=all_creators, closed_names=closed_names,
         scan=scraper.STATE,
     )
 
@@ -186,18 +193,39 @@ def scan():
     mode = request.form.get("mode", "base")
     if mode not in ("base", "backfill"):
         mode = "base"
+    # target dropdown: "all" | "closed" | "all_force" (rescan even if fresh)
+    target = request.form.get("target", "all")
+    force = target == "all_force"
+    if target not in ("all", "closed"):
+        target = "all"
     try:
         years = min(max(int(request.form.get("years", 1)), 1), 10)
     except ValueError:
         years = 1
-    started = scraper.start_scan_in_background(mode=mode, years=years)
+    started = scraper.start_scan_in_background(mode=mode, years=years, target=target, force=force)
     if not started:
         flash("A scan is already running.", "err")
     elif mode == "backfill":
         flash(f"Backfill scan started — going back {years} year(s). This can take a while.", "ok")
     else:
-        flash("Scan started.", "ok")
+        what = {"closed": "closed influencers", "all": "channels not scanned in 24h"}[target] if not force else "all channels (forced)"
+        flash(f"Scan started: {what}.", "ok")
     return redirect(request.referrer or url_for("dashboard"))
+
+
+@app.route("/channels/<int:cid>/status", methods=["POST"])
+def channels_status(cid):
+    new = request.form.get("status", "prospect")
+    if new not in ("prospect", "closed"):
+        new = "prospect"
+    conn = db.connect()
+    try:
+        conn.execute("UPDATE channels SET status = ? WHERE id = ?", (new, cid))
+        conn.commit()
+    finally:
+        conn.close()
+    flash("Marked as closed — you're working together now." if new == "closed" else "Moved back to prospects.", "ok")
+    return redirect(request.referrer or url_for("channels"))
 
 
 @app.route("/scan/status")

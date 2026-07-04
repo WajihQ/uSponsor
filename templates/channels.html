@@ -8,6 +8,10 @@
 .forms input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--ink-2); }
 .hint { color:var(--muted); font-size:12px; margin:6px 0 0; }
 .pend { color:var(--muted); font-style:italic; }
+.badge { display:inline-block; font-size:11px; font-weight:700; border-radius:999px;
+         padding:1px 9px; margin-left:6px; vertical-align:1px; }
+.badge.closed { color:var(--good); border:1px solid var(--good); }
+td form { display:inline-block; margin-right:6px; }
 {% endblock %}
 
 {% block content %}
@@ -35,7 +39,11 @@
      chosen cutoff, skipping videos already in the database.</p>
   <form method="post" action="{{ url_for('scan') }}" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
     <input type="hidden" name="mode" value="backfill">
-    <label for="bf-years">Go back</label>
+    <select name="target" style="font:inherit; padding:6px 8px; border:1px solid var(--ring); border-radius:8px; background:var(--surface); color:var(--ink)">
+      <option value="all">All channels</option>
+      <option value="closed">Closed only</option>
+    </select>
+    <label for="bf-years">back</label>
     <select name="years" id="bf-years" style="font:inherit; padding:6px 8px; border:1px solid var(--ring); border-radius:8px; background:var(--surface); color:var(--ink)">
       <option value="1">1 year</option>
       <option value="2">2 years</option>
@@ -55,12 +63,23 @@
   {% if chans %}
   <div class="scroll">
     <table>
-      <tr><th>Channel</th><th>Videos scanned</th><th>Sponsorships</th><th>Last scanned</th><th></th></tr>
+      <tr><th>Channel</th><th>Status</th><th>Videos scanned</th><th>Sponsorships</th><th>Last scanned</th><th></th></tr>
       {% for c in chans %}
       <tr>
         <td>
-          {% if c.name %}<b>{{ c.name }}</b><br><a href="{{ c.input_url }}" target="_blank" class="ev" style="font-size:12px">{{ c.input_url }}</a>
+          {% if c.name %}<b>{{ c.name }}</b>{% if c.status == 'closed' %}<span class="badge closed">✓ closed</span>{% endif %}<br><a href="{{ c.input_url }}" target="_blank" class="ev" style="font-size:12px">{{ c.input_url }}</a>
           {% else %}<a href="{{ c.input_url }}" target="_blank">{{ c.input_url }}</a> <span class="pend">(pending first scan)</span>{% endif %}
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('channels_status', cid=c.id) }}">
+            {% if c.status == 'closed' %}
+              <input type="hidden" name="status" value="prospect">
+              <button title="Move back to prospects">Reopen</button>
+            {% else %}
+              <input type="hidden" name="status" value="closed">
+              <button title="Mark as closed — they agreed to work with you">Mark closed</button>
+            {% endif %}
+          </form>
         </td>
         <td class="num">{{ c.videos }}</td>
         <td class="num">{{ c.spons }}</td>
