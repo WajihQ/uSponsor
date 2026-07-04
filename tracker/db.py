@@ -14,7 +14,9 @@ CREATE TABLE IF NOT EXISTS channels (
     name        TEXT,                   -- resolved channel name
     added_at    TEXT NOT NULL DEFAULT (datetime('now')),
     last_scanned TEXT,
-    status      TEXT NOT NULL DEFAULT 'prospect'  -- 'prospect' | 'closed'
+    status      TEXT NOT NULL DEFAULT 'prospect', -- 'prospect' | 'closed'
+    niche       TEXT,                             -- e.g. 'Tech'
+    subniche    TEXT                              -- e.g. 'Mini PCs'
 );
 
 CREATE TABLE IF NOT EXISTS videos (
@@ -52,10 +54,13 @@ def connect():
 def init_db():
     with connect() as conn:
         conn.executescript(SCHEMA)
-        # migrate databases created before the status column existed
+        # migrate databases created before newer channel columns existed
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(channels)")}
         if "status" not in cols:
             conn.execute("ALTER TABLE channels ADD COLUMN status TEXT NOT NULL DEFAULT 'prospect'")
+        if "niche" not in cols:
+            conn.execute("ALTER TABLE channels ADD COLUMN niche TEXT")
+            conn.execute("ALTER TABLE channels ADD COLUMN subniche TEXT")
 
 
 def add_channel(url):

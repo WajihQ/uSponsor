@@ -32,6 +32,8 @@ def dashboard():
     f_status = request.args.get("status", "")
     if f_status not in ("", "closed"):
         f_status = ""
+    f_niche = request.args.get("niche", "")
+    f_subniche = request.args.get("subniche", "")
     since = _since(days)
 
     conn = db.connect()
@@ -52,6 +54,12 @@ def dashboard():
         if f_status:
             base += " AND c.status = ?"
             args.append(f_status)
+        if f_niche:
+            base += " AND c.niche = ?"
+            args.append(f_niche)
+        if f_subniche:
+            base += " AND c.subniche = ?"
+            args.append(f_subniche)
 
         rows = conn.execute(
             "SELECT s.brand, s.brand_key, s.evidence, v.title, v.url, v.upload_date,"
@@ -99,6 +107,18 @@ def dashboard():
             "SELECT id, COALESCE(name, input_url) AS name, status FROM channels ORDER BY name"
         ).fetchall()
         closed_names = {r["name"] for r in all_creators if r["status"] == "closed"}
+        all_niches = [
+            r["niche"] for r in conn.execute(
+                "SELECT DISTINCT niche FROM channels WHERE niche IS NOT NULL AND niche != '' ORDER BY niche"
+            )
+        ]
+        all_subniches = [
+            r["subniche"] for r in conn.execute(
+                "SELECT DISTINCT subniche FROM channels WHERE subniche IS NOT NULL AND subniche != ''"
+                + (" AND niche = ?" if f_niche else "") + " ORDER BY subniche",
+                (f_niche,) if f_niche else (),
+            )
+        ]
     finally:
         conn.close()
 
@@ -137,6 +157,7 @@ def dashboard():
         rows=rows, stats=stats, heatmap=heatmap,
         week_grid=week_grid, day_list=day_list,
         ranges=RANGES, days=days, f_brand=f_brand, f_creator=f_creator, f_status=f_status,
+        f_niche=f_niche, f_subniche=f_subniche, all_niches=all_niches, all_subniches=all_subniches,
         all_brands=all_brands, all_creators=all_creators, closed_names=closed_names,
         scan=scraper.STATE,
     )
@@ -152,9 +173,14 @@ def channels():
             " LEFT JOIN sponsorships s ON s.video_ref = v.id"
             " GROUP BY c.id ORDER BY COALESCE(c.name, c.input_url)"
         ).fetchall()
+        niches = [
+            r["niche"] for r in conn.execute(
+                "SELECT DISTINCT niche FROM channels WHERE niche IS NOT NULL AND niche != '' ORDER BY niche"
+            )
+        ]
     finally:
         conn.close()
-    return render_template("channels.html", chans=chans, scan=scraper.STATE)
+    return render_template("channels.html", chans=chans, niches=niches, scan=scraper.STATE)
 
 
 @app.route("/channels/add", methods=["POST"])
@@ -174,6 +200,23 @@ def channels_import():
     added, skipped = db.import_channel_lines(text)
     flash(f"Imported {len(added)} channel(s); skipped {len(skipped)} (duplicates/invalid).", "ok")
     return redirect(url_for("channels"))
+
+
+@app.route("/channels/<int:cid>/niche", methods=["POST"])
+def channels_niche(cid):
+    niche = request.form.get("niche", "").strip()[:40]
+    subniche = request.form.get("subniche", "").strip()[:40]
+    conn = db.connect()
+    try:
+        conn.execute(
+            "UPDATE channels SET niche = ?, subniche = ? WHERE id = ?",
+            (niche or None, subniche or None, cid),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    flash("Niche updated.", "ok")
+    return redirect(request.referrer or url_for("channels"))
 
 
 @app.route("/channels/<int:cid>/delete", methods=["POST"])

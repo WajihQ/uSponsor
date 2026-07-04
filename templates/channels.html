@@ -12,6 +12,12 @@
          padding:1px 9px; margin-left:6px; vertical-align:1px; }
 .badge.closed { color:var(--good); border:1px solid var(--good); }
 td form { display:inline-block; margin-right:6px; }
+.niche-form { display:flex; gap:5px; align-items:center; }
+.niche-form input { font:inherit; font-size:12.5px; width:105px; padding:4px 7px;
+  border:1px solid var(--ring); border-radius:6px; background:var(--page); color:var(--ink); }
+.niche-form button { padding:4px 10px; font-size:12.5px; }
+#chanSearch { font:inherit; width:280px; padding:7px 10px; margin-bottom:12px;
+  border:1px solid var(--ring); border-radius:8px; background:var(--page); color:var(--ink); }
 {% endblock %}
 
 {% block content %}
@@ -61,14 +67,23 @@ td form { display:inline-block; margin-right:6px; }
   <h2>Tracked channels ({{ chans | length }})</h2>
   <p class="sub">Names resolve automatically on first scan. Removing a channel also removes its stored videos and sponsorships.</p>
   {% if chans %}
+  <input type="text" id="chanSearch" placeholder="Search creators… (name, link, or niche)"
+         oninput="filterChannels(this.value)">
   <div class="scroll">
-    <table>
-      <tr><th>Channel</th><th>Status</th><th>Videos scanned</th><th>Sponsorships</th><th>Last scanned</th><th></th></tr>
+    <table id="chanTable">
+      <tr><th>Channel</th><th>Niche / sub-niche</th><th>Status</th><th>Videos</th><th>Sponsorships</th><th>Last scanned</th><th></th></tr>
       {% for c in chans %}
       <tr>
         <td>
           {% if c.name %}<b>{{ c.name }}</b>{% if c.status == 'closed' %}<span class="badge closed">✓ closed</span>{% endif %}<br><a href="{{ c.input_url }}" target="_blank" class="ev" style="font-size:12px">{{ c.input_url }}</a>
           {% else %}<a href="{{ c.input_url }}" target="_blank">{{ c.input_url }}</a> <span class="pend">(pending first scan)</span>{% endif %}
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('channels_niche', cid=c.id) }}" class="niche-form">
+            <input type="text" name="niche" value="{{ c.niche or '' }}" placeholder="Niche" list="nichelist">
+            <input type="text" name="subniche" value="{{ c.subniche or '' }}" placeholder="Sub-niche">
+            <button title="Save niche">Save</button>
+          </form>
         </td>
         <td>
           <form method="post" action="{{ url_for('channels_status', cid=c.id) }}">
@@ -98,4 +113,19 @@ td form { display:inline-block; margin-right:6px; }
     <p class="sub">No channels yet — add one above, then hit <b>Scan now</b>.</p>
   {% endif %}
 </div>
+
+<datalist id="nichelist">
+  {% for n in niches %}<option value="{{ n }}">{% endfor %}
+</datalist>
+<script>
+function filterChannels(q) {
+  q = q.trim().toLowerCase();
+  document.querySelectorAll('#chanTable tr').forEach((tr, i) => {
+    if (i === 0) return;  // header row
+    let hay = tr.textContent;
+    tr.querySelectorAll('input[type=text]').forEach(inp => { hay += ' ' + inp.value; });
+    tr.style.display = !q || hay.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+</script>
 {% endblock %}
