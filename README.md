@@ -94,8 +94,10 @@ Open http://127.0.0.1:5000
    subscribers, average views, engagement rate and upload cadence (computed
    from scanned videos), sponsor history with per-month chart, an editable
    **media kit** (integration/dedicated rates, audience gender/geo/age,
-   notes), and a **Copy for email** box with the whole summary as plain
-   text, one click to clipboard.
+   notes), a **Copy for email** box with the whole summary as plain
+   text (one click to clipboard), and an **image gallery** for analytics
+   screenshots and media-kit pages (uploads live in `uploads/` next to
+   the database — back them up together).
 9. Video descriptions are stored in the database, so **Re-run detection**
    (Brands tab) can re-apply the current detector and brand list to
    everything already scanned — offline, in seconds. Use **Re-scan fresh**

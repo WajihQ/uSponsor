@@ -64,7 +64,7 @@ td { padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top; 
   box-shadow:0 4px 18px rgba(0,0,0,.25); opacity:0; transform:translateY(8px);
   transition:opacity .18s, transform .18s; pointer-events:none; max-width:340px; }
 #toast.show { opacity:1; transform:none; }
-tr.fading { transition:opacity .25s; opacity:0; }
+.fading { transition:opacity .25s; opacity:0; }
 {% block style %}{% endblock %}
 </style>
 </head>
@@ -119,7 +119,7 @@ tr.fading { transition:opacity .25s; opacity:0; }
       });
     } catch (err) { toast('Network error — not saved'); return; }
     if (!res.ok) { toast('Failed (' + res.status + ') — not saved'); return; }
-    const act = f.dataset.ajax, row = f.closest('tr');
+    const act = f.dataset.ajax, row = f.closest('tr, .shot');
     if (act === 'remove-row' && row) {
       row.classList.add('fading');
       setTimeout(() => row.remove(), 250);

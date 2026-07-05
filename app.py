@@ -4,8 +4,10 @@ Run:  python app.py   then open http://127.0.0.1:5000
 """
 import datetime as dt
 import json
+import os
 
-from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
+from flask import Flask, abort, flash, jsonify, redirect, render_template, request, send_from_directory, url_for
+from werkzeug.utils import secure_filename
 
 from tracker import db, scraper
 from tracker.detector import brand_key
@@ -13,6 +15,20 @@ from tracker.detector import brand_key
 app = Flask(__name__)
 app.secret_key = "usponsor-local"  # local single-user tool; only used for flash messages
 db.init_db()
+
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+
+
+def _creator_dir(cid):
+    return os.path.join(UPLOAD_DIR, str(int(cid)))
+
+
+def _creator_images(cid):
+    d = _creator_dir(cid)
+    if not os.path.isdir(d):
+        return []
+    return sorted(f for f in os.listdir(d) if os.path.splitext(f)[1].lower() in IMAGE_EXTS)
 
 RANGES = {"7": "Last 7 days", "30": "Last 30 days", "90": "Last 90 days", "all": "All time"}
 
@@ -514,8 +530,51 @@ def creator_detail(cid):
     return render_template(
         "creator.html", ch=ch, stats=stats, cadence=cadence, brands=brands,
         months=months, month_max=max((m["n"] for m in months), default=0),
-        videos=videos, email_text=email_text, scan=scraper.STATE,
+        videos=videos, email_text=email_text, images=_creator_images(cid),
+        scan=scraper.STATE,
     )
+
+
+@app.route("/creator/<int:cid>/images", methods=["POST"])
+def creator_images_upload(cid):
+    files = request.files.getlist("images")
+    saved = skipped = 0
+    os.makedirs(_creator_dir(cid), exist_ok=True)
+    for f in files:
+        if not f or not f.filename:
+            continue
+        name = secure_filename(f.filename)
+        if os.path.splitext(name)[1].lower() not in IMAGE_EXTS:
+            skipped += 1
+            continue
+        path = os.path.join(_creator_dir(cid), name)
+        base, ext = os.path.splitext(name)
+        n = 1
+        while os.path.exists(path):  # keep both copies on name collisions
+            path = os.path.join(_creator_dir(cid), f"{base}-{n}{ext}")
+            n += 1
+        f.save(path)
+        saved += 1
+    flash(f"Uploaded {saved} image(s)" + (f", skipped {skipped} (not an image)" if skipped else "") + ".",
+          "ok" if saved else "err")
+    return redirect(url_for("creator_detail", cid=cid))
+
+
+@app.route("/uploads/<int:cid>/<path:filename>")
+def creator_image(cid, filename):
+    name = secure_filename(filename)
+    if os.path.splitext(name)[1].lower() not in IMAGE_EXTS:
+        abort(404)
+    return send_from_directory(_creator_dir(cid), name)
+
+
+@app.route("/creator/<int:cid>/images/<path:filename>/delete", methods=["POST"])
+def creator_image_delete(cid, filename):
+    name = secure_filename(filename)
+    path = os.path.join(_creator_dir(cid), name)
+    if os.path.isfile(path):
+        os.remove(path)
+    return _done("Image removed.", endpoint="channels")
 
 
 @app.route("/creator/<int:cid>/kit", methods=["POST"])
