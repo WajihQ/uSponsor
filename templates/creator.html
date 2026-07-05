@@ -45,7 +45,7 @@ pre.copybox { background:var(--page); border:1px solid var(--ring); border-radiu
 
 <div class="tiles">
   <div class="tile"><div class="v num">{{ '{:,}'.format(ch.subscribers) if ch.subscribers else '—' }}</div><div class="l">subscribers</div></div>
-  <div class="tile"><div class="v num">{{ '{:,}'.format(stats.avg_views | int) if stats.avg_views else '—' }}</div><div class="l">avg views (last {{ stats.n }} videos)</div></div>
+  <div class="tile"><div class="v num">{{ '{:,}'.format(stats.avg_views | int) if stats.avg_views else '—' }}</div><div class="l" title="Last 12 videos, highest and lowest dropped">adjusted avg views ({{ stats.n }} videos)</div></div>
   <div class="tile"><div class="v num">{{ '%.1f%%' | format(stats.engagement) if stats.engagement else '—' }}</div><div class="l">engagement rate</div></div>
   <div class="tile"><div class="v num">{{ '%.1f' | format(cadence) if cadence else '—' }}</div><div class="l">uploads / month (90d)</div></div>
   <div class="tile"><div class="v num">{{ brands | length }}</div><div class="l">brands worked with</div></div>

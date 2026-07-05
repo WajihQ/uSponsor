@@ -471,15 +471,26 @@ def creator_detail(cid):
         if not ch:
             flash("Unknown creator.", "err")
             return redirect(url_for("channels"))
-        stats = conn.execute(
-            "SELECT COUNT(*) AS n, AVG(view_count) AS avg_views,"
-            " AVG(CASE WHEN view_count > 0 THEN"
-            "  (COALESCE(like_count,0) + COALESCE(comment_count,0)) * 100.0 / view_count END) AS engagement"
-            " FROM (SELECT view_count, like_count, comment_count FROM videos"
-            "       WHERE channel_ref = ? AND view_count IS NOT NULL"
-            "       ORDER BY upload_date DESC LIMIT 15)",
+        # adjusted average: last 12 videos with view data, drop the single
+        # highest- and lowest-viewed (viral spikes / flops), average the rest;
+        # engagement rate uses the same trimmed set
+        recent = conn.execute(
+            "SELECT view_count, COALESCE(like_count, 0) AS likes,"
+            " COALESCE(comment_count, 0) AS comments FROM videos"
+            " WHERE channel_ref = ? AND view_count IS NOT NULL AND view_count > 0"
+            " ORDER BY upload_date DESC LIMIT 12",
             (cid,),
-        ).fetchone()
+        ).fetchall()
+        trimmed = sorted(recent, key=lambda r: r["view_count"])[1:-1] if len(recent) >= 3 else recent
+        views_sum = sum(r["view_count"] for r in trimmed)
+        stats = {
+            "n": len(trimmed),
+            "avg_views": views_sum / len(trimmed) if trimmed else None,
+            "engagement": (
+                sum(r["likes"] + r["comments"] for r in trimmed) * 100.0 / views_sum
+                if views_sum else None
+            ),
+        }
         cadence = conn.execute(
             "SELECT COUNT(*) / 3.0 FROM videos WHERE channel_ref = ? AND upload_date >= ?",
             (cid, (dt.date.today() - dt.timedelta(days=90)).isoformat()),
@@ -514,7 +525,7 @@ def creator_detail(cid):
         f"Channel: {ch['input_url']}",
         f"Niche: {ch['niche'] or '—'}" + (f" / {ch['subniche']}" if ch["subniche"] else ""),
         f"Subscribers: {fmt(ch['subscribers'])}",
-        f"Average views (last {stats['n'] or 0} videos): {fmt(stats['avg_views'])}",
+        f"Average views (adjusted, {stats['n'] or 0} recent videos): {fmt(stats['avg_views'])}",
         "Engagement rate: " + (f"{eng:.1f}%" if eng else "—"),
         "Uploads per month: " + (f"{cadence:.1f}" if cadence else "—"),
         f"Integration rate: {ch['rate_integration'] or '—'}",
