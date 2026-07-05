@@ -18,7 +18,14 @@ CREATE TABLE IF NOT EXISTS channels (
     niche       TEXT,                             -- e.g. 'Tech'
     subniche    TEXT,                             -- e.g. 'Mini PCs'
     agency      TEXT,                             -- managing agency, if repped elsewhere
-    backfilled_to TEXT                            -- oldest date a completed backfill covered
+    backfilled_to TEXT,                           -- oldest date a completed backfill covered
+    subscribers INTEGER,                          -- captured at scan time
+    rate_integration TEXT,                        -- media-kit fields, hand-entered
+    rate_dedicated TEXT,
+    demo_gender TEXT,
+    demo_geo    TEXT,
+    demo_age    TEXT,
+    notes       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS brands (
@@ -38,6 +45,9 @@ CREATE TABLE IF NOT EXISTS videos (
     upload_date TEXT,                   -- YYYY-MM-DD
     scanned_at  TEXT NOT NULL DEFAULT (datetime('now')),
     description TEXT,                   -- kept so detection can be re-run offline
+    view_count  INTEGER,                -- stats captured at scan time
+    like_count  INTEGER,
+    comment_count INTEGER,
     sb_checked  INTEGER NOT NULL DEFAULT 0,  -- SponsorBlock queried yet?
     sb_sponsored INTEGER,               -- 1 = has a sponsor segment
     sb_segments TEXT,                   -- JSON [[start,end],...] seconds
@@ -88,9 +98,17 @@ def init_db():
             conn.execute("ALTER TABLE channels ADD COLUMN agency TEXT")
         if "backfilled_to" not in cols:
             conn.execute("ALTER TABLE channels ADD COLUMN backfilled_to TEXT")
+        if "subscribers" not in cols:
+            conn.execute("ALTER TABLE channels ADD COLUMN subscribers INTEGER")
+            for c in ("rate_integration", "rate_dedicated", "demo_gender", "demo_geo", "demo_age", "notes"):
+                conn.execute(f"ALTER TABLE channels ADD COLUMN {c} TEXT")
         vcols = {r["name"] for r in conn.execute("PRAGMA table_info(videos)")}
         if "description" not in vcols:
             conn.execute("ALTER TABLE videos ADD COLUMN description TEXT")
+        if "view_count" not in vcols:
+            conn.execute("ALTER TABLE videos ADD COLUMN view_count INTEGER")
+            conn.execute("ALTER TABLE videos ADD COLUMN like_count INTEGER")
+            conn.execute("ALTER TABLE videos ADD COLUMN comment_count INTEGER")
         if "sb_checked" not in vcols:
             conn.execute("ALTER TABLE videos ADD COLUMN sb_checked INTEGER NOT NULL DEFAULT 0")
             conn.execute("ALTER TABLE videos ADD COLUMN sb_sponsored INTEGER")

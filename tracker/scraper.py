@@ -73,7 +73,7 @@ def _list_uploads(channel_url, limit=LOOKBACK_ENTRIES):
     entries = [e for e in (info.get("entries") or []) if e and e.get("id")]
     name = info.get("channel") or info.get("uploader") or info.get("title") or channel_url
     name = name.removesuffix(" - Videos")
-    return info.get("channel_id") or info.get("id"), name, entries
+    return info.get("channel_id") or info.get("id"), name, entries, info.get("channel_follower_count")
 
 
 def _fetch_video(video_id):
@@ -90,9 +90,10 @@ def _store_video(conn, ch, v, known=(), aliases=None):
         dt.datetime.strptime(raw_date, "%Y%m%d").date().isoformat() if raw_date else None
     )
     cur = conn.execute(
-        "INSERT OR IGNORE INTO videos (video_id, channel_ref, title, url, upload_date, description)"
-        " VALUES (?, ?, ?, ?, ?, ?)",
-        (v["id"], ch["id"], v.get("title"), v.get("webpage_url"), upload_date, v.get("description")),
+        "INSERT OR IGNORE INTO videos (video_id, channel_ref, title, url, upload_date, description,"
+        " view_count, like_count, comment_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (v["id"], ch["id"], v.get("title"), v.get("webpage_url"), upload_date, v.get("description"),
+         v.get("view_count"), v.get("like_count"), v.get("comment_count")),
     )
     if not cur.rowcount:
         return False, 0, upload_date
@@ -232,10 +233,11 @@ def segment_pass(check_limit=300, caption_limit=40):
         conn.close()
 
 
-def _update_channel_meta(conn, ch, channel_id, name):
+def _update_channel_meta(conn, ch, channel_id, name, subscribers=None):
     conn.execute(
-        "UPDATE channels SET channel_id = ?, name = ?, last_scanned = datetime('now') WHERE id = ?",
-        (channel_id, name, ch["id"]),
+        "UPDATE channels SET channel_id = ?, name = ?, last_scanned = datetime('now'),"
+        " subscribers = COALESCE(?, subscribers) WHERE id = ?",
+        (channel_id, name, subscribers, ch["id"]),
     )
     conn.commit()
 
@@ -252,8 +254,8 @@ def _known_ids(conn, ch):
 
 def scan_channel(conn, ch):
     """Base scan of one channel row; returns (name, new_videos, new_sponsorships)."""
-    channel_id, name, entries = _list_uploads(ch["input_url"])
-    _update_channel_meta(conn, ch, channel_id, name)
+    channel_id, name, entries, subs = _list_uploads(ch["input_url"])
+    _update_channel_meta(conn, ch, channel_id, name, subs)
     seen = _known_ids(conn, ch)
     fresh = [e for e in entries if e["id"] not in seen][:MAX_NEW_PER_SCAN]
     known = db.known_brand_names(conn)
@@ -278,8 +280,8 @@ def backfill_channel(conn, ch, cutoff):
     The uploads feed is newest-first, so we stop at the first fetched video
     older than the cutoff. Already-stored videos are skipped without a fetch.
     """
-    channel_id, name, entries = _list_uploads(ch["input_url"], limit=None)
-    _update_channel_meta(conn, ch, channel_id, name)
+    channel_id, name, entries, subs = _list_uploads(ch["input_url"], limit=None)
+    _update_channel_meta(conn, ch, channel_id, name, subs)
     seen = _known_ids(conn, ch)
     known = db.known_brand_names(conn)
     aliases = db.alias_map(conn)

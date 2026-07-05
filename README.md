@@ -90,7 +90,13 @@ Open http://127.0.0.1:5000
    full video list. Matching ignores case and punctuation. Known brands also boost detection: a mention near sponsor
    language ("use code…", "% off", "partner") is caught even when the
    disclosure phrasing is unusual.
-8. Video descriptions are stored in the database, so **Re-run detection**
+8. Click a creator's name in the channel list for their **profile page**:
+   subscribers, average views, engagement rate and upload cadence (computed
+   from scanned videos), sponsor history with per-month chart, an editable
+   **media kit** (integration/dedicated rates, audience gender/geo/age,
+   notes), and a **Copy for email** box with the whole summary as plain
+   text, one click to clipboard.
+9. Video descriptions are stored in the database, so **Re-run detection**
    (Brands tab) can re-apply the current detector and brand list to
    everything already scanned — offline, in seconds. Use **Re-scan fresh**
    on a channel to re-fetch videos scanned by older versions that didn't

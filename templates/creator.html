@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}{{ ch.name or ch.input_url }} — uSponsor{% endblock %}
+{% block style %}
+.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:20px; }
+.tile { background:var(--surface); border:1px solid var(--ring); border-radius:12px; padding:14px 16px; }
+.tile .v { font-size:24px; font-weight:700; line-height:1.1; }
+.tile .l { color:var(--muted); font-size:12.5px; margin-top:2px; }
+.bhead { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin:4px 0 16px; }
+.bhead h1 { margin:0; font-size:24px; }
+.badge { font-size:12px; font-weight:700; border:1px solid var(--good); color:var(--good); border-radius:999px; padding:2px 10px; }
+.tag { font-size:12px; font-weight:600; border:1px solid var(--ring); color:var(--ink-2); border-radius:999px; padding:2px 10px; }
+.chart { display:flex; align-items:flex-end; gap:8px; height:110px; padding:6px 2px 0; margin-top:14px; }
+.chart .col { flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:4px; min-width:36px; max-width:70px; }
+.chart .bar { width:100%; max-width:44px; background:var(--accent); border-radius:4px 4px 0 0; min-height:2px; }
+.chart .n { font-size:11.5px; font-weight:600; color:var(--ink-2); font-variant-numeric:tabular-nums; }
+.chart .m { font-size:10.5px; color:var(--muted); white-space:nowrap; }
+.two { display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start; }
+@media (max-width:900px) { .two { grid-template-columns:1fr; } }
+.kit label { display:block; font-size:12px; color:var(--muted); font-weight:600; margin:10px 0 3px; }
+.kit input, .kit textarea { font:inherit; width:100%; padding:7px 10px; border:1px solid var(--ring);
+  border-radius:8px; background:var(--page); color:var(--ink); }
+.kit textarea { min-height:64px; resize:vertical; }
+pre.copybox { background:var(--page); border:1px solid var(--ring); border-radius:10px;
+  padding:12px 14px; font:12.5px/1.5 ui-monospace, monospace; white-space:pre-wrap; color:var(--ink-2); }
+.ev { color:var(--muted); font-size:12px; }
+{% endblock %}
+
+{% block content %}
+<div class="bhead">
+  <h1>{{ ch.name or ch.input_url }}</h1>
+  {% if ch.status == 'closed' %}<span class="badge">✓ closed</span>{% endif %}
+  {% if ch.niche %}<span class="tag">{{ ch.niche }}{{ ' / ' + ch.subniche if ch.subniche }}</span>{% endif %}
+  {% if ch.agency %}<span class="tag">agency: {{ ch.agency }}</span>{% endif %}
+  <a href="{{ ch.input_url }}" target="_blank">YouTube ↗</a>
+  <a href="{{ url_for('dashboard', creator=ch.id, days='all') }}">open in dashboard →</a>
+  <span style="flex:1"></span>
+  <a href="{{ url_for('channels') }}">‹ back to Channels</a>
+</div>
+
+<div class="tiles">
+  <div class="tile"><div class="v num">{{ '{:,}'.format(ch.subscribers) if ch.subscribers else '—' }}</div><div class="l">subscribers</div></div>
+  <div class="tile"><div class="v num">{{ '{:,}'.format(stats.avg_views | int) if stats.avg_views else '—' }}</div><div class="l">avg views (last {{ stats.n }} videos)</div></div>
+  <div class="tile"><div class="v num">{{ '%.1f%%' | format(stats.engagement) if stats.engagement else '—' }}</div><div class="l">engagement rate</div></div>
+  <div class="tile"><div class="v num">{{ '%.1f' | format(cadence) if cadence else '—' }}</div><div class="l">uploads / month (90d)</div></div>
+  <div class="tile"><div class="v num">{{ brands | length }}</div><div class="l">brands worked with</div></div>
+</div>
+
+<div class="two">
+  <div>
+    {% if months %}
+    <div class="card">
+      <h2>Sponsorships per month</h2>
+      <div class="chart">
+        {% for m in months %}
+        <div class="col" title="{{ m.month }}: {{ m.n }}">
+          <span class="n">{{ m.n }}</span>
+          <div class="bar" style="height:{{ (m.n / month_max * 84) | round(1) }}px"></div>
+          <span class="m">{{ m.month }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <h2>Sponsor history</h2>
+      {% if brands %}
+      <div class="scroll">
+        <table>
+          <tr><th>Brand</th><th>Times</th><th>Last seen</th><th></th></tr>
+          {% for b in brands %}
+          <tr>
+            <td><b>{{ b.name }}</b></td>
+            <td class="num">{{ b.n }}</td>
+            <td class="num">{{ b.last_seen or '—' }}</td>
+            <td><a href="{{ url_for('brand_detail', key=b.brand_key) }}">brand page →</a></td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+      {% else %}
+        <p class="sub">No sponsorships detected yet.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <h2>Copy for email</h2>
+      <p class="sub">The stats below, ready to paste. Fill in the media kit to enrich it.</p>
+      <pre class="copybox" id="emailText">{{ email_text }}</pre>
+      <button class="primary" onclick="navigator.clipboard.writeText(document.getElementById('emailText').innerText).then(() => { this.textContent = 'Copied ✓'; setTimeout(() => this.textContent = 'Copy to clipboard', 1800); })">Copy to clipboard</button>
+    </div>
+
+    <div class="card kit">
+      <h2>Media kit</h2>
+      <p class="sub">Hand-entered facts from the creator's media kit — rates, audience demographics, notes.</p>
+      <form method="post" action="{{ url_for('creator_kit', cid=ch.id) }}" data-ajax="toast" data-done="Media kit saved — refresh to update the email text">
+        <label>Integration rate</label>
+        <input type="text" name="rate_integration" value="{{ ch.rate_integration or '' }}" placeholder="e.g. $1,500">
+        <label>Dedicated video rate</label>
+        <input type="text" name="rate_dedicated" value="{{ ch.rate_dedicated or '' }}" placeholder="e.g. $4,000">
+        <label>Audience gender</label>
+        <input type="text" name="demo_gender" value="{{ ch.demo_gender or '' }}" placeholder="e.g. 97.9% male, 2% female">
+        <label>Top geographies</label>
+        <input type="text" name="demo_geo" value="{{ ch.demo_geo or '' }}" placeholder="e.g. US 53.2%, UK 7.7%, CA 5.2%">
+        <label>Audience age</label>
+        <input type="text" name="demo_age" value="{{ ch.demo_age or '' }}" placeholder="e.g. 25-34: 34.6%, 35-44: 38.7%">
+        <label>Notes</label>
+        <textarea name="notes" placeholder="Anything else — contact, preferences, past deals…">{{ ch.notes or '' }}</textarea>
+        <button class="primary" style="margin-top:12px">Save media kit</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Recent videos</h2>
+  <p class="sub">Latest 25 scanned, with views and detected sponsors.</p>
+  <div class="scroll">
+    <table>
+      <tr><th>Date</th><th>Video</th><th>Views</th><th>Sponsors</th></tr>
+      {% for v in videos %}
+      <tr>
+        <td class="num" style="white-space:nowrap">{{ v.upload_date or '—' }}</td>
+        <td><a href="{{ v.url }}" target="_blank">{{ v.title }}</a></td>
+        <td class="num">{{ '{:,}'.format(v.view_count) if v.view_count else '—' }}</td>
+        <td>{{ v.sponsors or '' }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endblock %}

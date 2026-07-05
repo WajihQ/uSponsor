@@ -63,7 +63,7 @@
       <tr><th>Creator</th><th>Sponsorships</th><th>Last seen</th><th>Agency</th><th></th></tr>
       {% for c in creators %}
       <tr>
-        <td><b>{{ c.name }}</b>{{ ' ✓' if c.status == 'closed' }}</td>
+        <td><a href="{{ url_for('creator_detail', cid=c.id) }}"><b>{{ c.name }}</b></a>{{ ' ✓' if c.status == 'closed' }}</td>
         <td class="num">{{ c.n }}</td>
         <td class="num">{{ c.last_seen or '—' }}</td>
         <td>{{ c.agency or '—' }}</td>

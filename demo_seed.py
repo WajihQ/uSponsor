@@ -32,9 +32,10 @@ conn = db.connect()
 for i, name in enumerate(CREATORS):
     niche, subniche, agency = NICHES[name]
     conn.execute(
-        "INSERT INTO channels (input_url, channel_id, name, last_scanned, niche, subniche, agency)"
-        " VALUES (?, ?, ?, datetime('now'), ?, ?, ?)",
-        (f"https://www.youtube.com/@demo{i}", f"UCdemo{i:018d}", name, niche, subniche, agency),
+        "INSERT INTO channels (input_url, channel_id, name, last_scanned, niche, subniche, agency, subscribers)"
+        " VALUES (?, ?, ?, datetime('now'), ?, ?, ?, ?)",
+        (f"https://www.youtube.com/@demo{i}", f"UCdemo{i:018d}", name, niche, subniche, agency,
+         random.randint(80, 900) * 1000),
     )
 for crm in ("NordVPN", "Squarespace"):
     from tracker.detector import brand_key as bk
@@ -46,9 +47,10 @@ for n, (brand, creator) in enumerate(events):
     date = (today - dt.timedelta(days=random.randint(0, 45))).isoformat()
     ch = conn.execute("SELECT id FROM channels WHERE name = ?", (creator,)).fetchone()["id"]
     cur = conn.execute(
-        "INSERT INTO videos (video_id, channel_ref, title, url, upload_date)"
-        " VALUES (?, ?, ?, ?, ?)",
-        (f"demo{n:07d}", ch, f"Demo video #{n} — {brand} feature", "https://youtube.com/watch?v=dQw4w9WgXcQ", date),
+        "INSERT INTO videos (video_id, channel_ref, title, url, upload_date, view_count, like_count, comment_count)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (f"demo{n:07d}", ch, f"Demo video #{n} — {brand} feature", "https://youtube.com/watch?v=dQw4w9WgXcQ", date,
+         (v := random.randint(40, 400) * 1000), int(v * random.uniform(0.02, 0.06)), int(v * 0.004)),
     )
     conn.execute(
         "INSERT INTO sponsorships (video_ref, brand, brand_key, evidence) VALUES (?, ?, ?, ?)",

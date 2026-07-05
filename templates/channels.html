@@ -87,7 +87,7 @@ td form { display:inline-block; margin-right:6px; }
       {% for c in chans %}
       <tr>
         <td>
-          {% if c.name %}<b>{{ c.name }}</b>{% if c.status == 'closed' %}<span class="badge closed">✓ closed</span>{% endif %}<br><a href="{{ c.input_url }}" target="_blank" class="ev" style="font-size:12px">{{ c.input_url }}</a>
+          {% if c.name %}<a href="{{ url_for('creator_detail', cid=c.id) }}" title="Open profile — stats, rates, copy-for-email"><b>{{ c.name }}</b></a>{% if c.status == 'closed' %}<span class="badge closed">✓ closed</span>{% endif %}<br><a href="{{ c.input_url }}" target="_blank" class="ev" style="font-size:12px">{{ c.input_url }}</a>
           {% else %}<a href="{{ c.input_url }}" target="_blank">{{ c.input_url }}</a> <span class="pend">(pending first scan)</span>{% endif %}
         </td>
         <td>

@@ -447,6 +447,93 @@ def brands_rename():
     return _done(f"Renamed to “{new_name}” — matching entries were consolidated.", endpoint="brands")
 
 
+@app.route("/creator/<int:cid>")
+def creator_detail(cid):
+    conn = db.connect()
+    try:
+        ch = conn.execute("SELECT * FROM channels WHERE id = ?", (cid,)).fetchone()
+        if not ch:
+            flash("Unknown creator.", "err")
+            return redirect(url_for("channels"))
+        stats = conn.execute(
+            "SELECT COUNT(*) AS n, AVG(view_count) AS avg_views,"
+            " AVG(CASE WHEN view_count > 0 THEN"
+            "  (COALESCE(like_count,0) + COALESCE(comment_count,0)) * 100.0 / view_count END) AS engagement"
+            " FROM (SELECT view_count, like_count, comment_count FROM videos"
+            "       WHERE channel_ref = ? AND view_count IS NOT NULL"
+            "       ORDER BY upload_date DESC LIMIT 15)",
+            (cid,),
+        ).fetchone()
+        cadence = conn.execute(
+            "SELECT COUNT(*) / 3.0 FROM videos WHERE channel_ref = ? AND upload_date >= ?",
+            (cid, (dt.date.today() - dt.timedelta(days=90)).isoformat()),
+        ).fetchone()[0]
+        brands = conn.execute(
+            "SELECT s.brand_key, MIN(s.brand) AS name, COUNT(*) AS n, MAX(v.upload_date) AS last_seen"
+            " FROM sponsorships s JOIN videos v ON v.id = s.video_ref"
+            " WHERE v.channel_ref = ? GROUP BY s.brand_key ORDER BY n DESC, last_seen DESC",
+            (cid,),
+        ).fetchall()
+        months = conn.execute(
+            "SELECT substr(v.upload_date, 1, 7) AS month, COUNT(*) AS n"
+            " FROM sponsorships s JOIN videos v ON v.id = s.video_ref"
+            " WHERE v.channel_ref = ? AND v.upload_date IS NOT NULL"
+            " GROUP BY month ORDER BY month DESC LIMIT 12",
+            (cid,),
+        ).fetchall()[::-1]
+        videos = conn.execute(
+            "SELECT v.*, (SELECT GROUP_CONCAT(s.brand, ', ') FROM sponsorships s"
+            "  WHERE s.video_ref = v.id) AS sponsors"
+            " FROM videos v WHERE v.channel_ref = ? ORDER BY v.upload_date DESC LIMIT 25",
+            (cid,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    # plain-text media kit for copy-paste into emails
+    fmt = lambda x: f"{int(x):,}" if x else "—"
+    eng = stats["engagement"]
+    lines = [
+        f"{ch['name'] or ch['input_url']}",
+        f"Channel: {ch['input_url']}",
+        f"Niche: {ch['niche'] or '—'}" + (f" / {ch['subniche']}" if ch["subniche"] else ""),
+        f"Subscribers: {fmt(ch['subscribers'])}",
+        f"Average views (last {stats['n'] or 0} videos): {fmt(stats['avg_views'])}",
+        "Engagement rate: " + (f"{eng:.1f}%" if eng else "—"),
+        "Uploads per month: " + (f"{cadence:.1f}" if cadence else "—"),
+        f"Integration rate: {ch['rate_integration'] or '—'}",
+        f"Dedicated video rate: {ch['rate_dedicated'] or '—'}",
+    ]
+    if ch["demo_gender"]: lines.append(f"Audience gender: {ch['demo_gender']}")
+    if ch["demo_geo"]: lines.append(f"Top geographies: {ch['demo_geo']}")
+    if ch["demo_age"]: lines.append(f"Audience age: {ch['demo_age']}")
+    if brands:
+        lines.append("Recent sponsors: " + ", ".join(b["name"] for b in brands[:8]))
+    email_text = "\n".join(lines)
+
+    return render_template(
+        "creator.html", ch=ch, stats=stats, cadence=cadence, brands=brands,
+        months=months, month_max=max((m["n"] for m in months), default=0),
+        videos=videos, email_text=email_text, scan=scraper.STATE,
+    )
+
+
+@app.route("/creator/<int:cid>/kit", methods=["POST"])
+def creator_kit(cid):
+    fields = ("rate_integration", "rate_dedicated", "demo_gender", "demo_geo", "demo_age", "notes")
+    vals = [request.form.get(f, "").strip()[:200] or None for f in fields]
+    conn = db.connect()
+    try:
+        conn.execute(
+            f"UPDATE channels SET {', '.join(f'{f} = ?' for f in fields)} WHERE id = ?",
+            (*vals, cid),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return _done("Media kit saved.", endpoint="channels")
+
+
 @app.route("/brand/<key>")
 def brand_detail(key):
     conn = db.connect()
