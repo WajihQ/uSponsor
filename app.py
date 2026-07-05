@@ -7,6 +7,7 @@ import datetime as dt
 from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 
 from tracker import db, scraper
+from tracker.detector import brand_key
 
 app = Flask(__name__)
 app.secret_key = "usponsor-local"  # local single-user tool; only used for flash messages
@@ -341,6 +342,9 @@ def brands():
             " GROUP BY s.brand_key ORDER BY n DESC, last_seen DESC",
             (month_start,),
         ).fetchall()
+        alias_rows = conn.execute(
+            "SELECT alias_key, canonical FROM brand_aliases ORDER BY canonical COLLATE NOCASE"
+        ).fetchall()
     finally:
         conn.close()
     return render_template(
@@ -351,6 +355,7 @@ def brands():
         boycott=_pageof(boycott, "p_boy"),
         recent=_pageof(recent, "p_rec", per=25),
         monthly=_pageof(monthly, "p_mon", per=25),
+        alias_rows=alias_rows,
         page_url=lambda arg, p: url_for("brands", **{**request.args.to_dict(), arg: p}),
         scan=scraper.STATE,
     )
@@ -407,6 +412,21 @@ def brands_rename():
                 (new_name, new_key, old_key),
             )
             conn.execute("DELETE FROM brands WHERE brand_key = ?", (old_key,))
+            # remember the consolidation so future scans map the variant
+            # straight to the canonical name
+            conn.execute(
+                "INSERT INTO brand_aliases (alias_key, canonical) VALUES (?, ?)"
+                " ON CONFLICT(alias_key) DO UPDATE SET canonical = excluded.canonical",
+                (old_key, new_name),
+            )
+            # re-point aliases that previously resolved to the old name
+            # (A→B then B→C should leave A→C, not a dangling chain)
+            for r in conn.execute("SELECT alias_key, canonical FROM brand_aliases").fetchall():
+                if r["alias_key"] != old_key and brand_key(r["canonical"]) == old_key:
+                    conn.execute(
+                        "UPDATE brand_aliases SET canonical = ? WHERE alias_key = ?",
+                        (new_name, r["alias_key"]),
+                    )
         else:
             conn.execute("UPDATE sponsorships SET brand = ? WHERE brand_key = ?", (new_name, old_key))
             conn.execute("UPDATE brands SET name = ? WHERE brand_key = ?", (new_name, old_key))
@@ -414,6 +434,66 @@ def brands_rename():
     finally:
         conn.close()
     return _done(f"Renamed to “{new_name}” — matching entries were consolidated.", endpoint="brands")
+
+
+@app.route("/brand/<key>")
+def brand_detail(key):
+    conn = db.connect()
+    try:
+        head = conn.execute(
+            "SELECT MIN(s.brand) AS name, COUNT(*) AS total, COUNT(DISTINCT c.id) AS creators,"
+            " MIN(v.upload_date) AS first_seen, MAX(v.upload_date) AS last_seen"
+            " FROM sponsorships s JOIN videos v ON v.id = s.video_ref"
+            " JOIN channels c ON c.id = v.channel_ref WHERE s.brand_key = ?",
+            (key,),
+        ).fetchone()
+        if not head["name"]:
+            flash("No sponsorships recorded for that brand.", "err")
+            return redirect(url_for("brands"))
+        kind_row = conn.execute("SELECT kind FROM brands WHERE brand_key = ?", (key,)).fetchone()
+        months = conn.execute(
+            "SELECT substr(v.upload_date, 1, 7) AS month, COUNT(*) AS n"
+            " FROM sponsorships s JOIN videos v ON v.id = s.video_ref"
+            " WHERE s.brand_key = ? AND v.upload_date IS NOT NULL"
+            " GROUP BY month ORDER BY month DESC LIMIT 12",
+            (key,),
+        ).fetchall()[::-1]
+        creators = conn.execute(
+            "SELECT c.id, c.name, c.status, c.agency, COUNT(*) AS n, MAX(v.upload_date) AS last_seen"
+            " FROM sponsorships s JOIN videos v ON v.id = s.video_ref"
+            " JOIN channels c ON c.id = v.channel_ref WHERE s.brand_key = ?"
+            " GROUP BY c.id ORDER BY n DESC, last_seen DESC",
+            (key,),
+        ).fetchall()
+        videos = conn.execute(
+            "SELECT v.title, v.url, v.upload_date, c.name AS creator, s.evidence"
+            " FROM sponsorships s JOIN videos v ON v.id = s.video_ref"
+            " JOIN channels c ON c.id = v.channel_ref WHERE s.brand_key = ?"
+            " ORDER BY v.upload_date DESC LIMIT 50",
+            (key,),
+        ).fetchall()
+        aliases = [
+            r["alias_key"] for r in conn.execute("SELECT alias_key, canonical FROM brand_aliases")
+            if brand_key(r["canonical"]) == key
+        ]
+    finally:
+        conn.close()
+    return render_template(
+        "brand.html", key=key, head=head, kind=kind_row["kind"] if kind_row else None,
+        months=months, month_max=max((m["n"] for m in months), default=0),
+        creators=creators, videos=videos, aliases=aliases, scan=scraper.STATE,
+    )
+
+
+@app.route("/aliases/<alias_key>/delete", methods=["POST"])
+def alias_delete(alias_key):
+    conn = db.connect()
+    try:
+        conn.execute("DELETE FROM brand_aliases WHERE alias_key = ?", (alias_key,))
+        conn.commit()
+    finally:
+        conn.close()
+    return _done("Alias removed — future scans will record that name separately.", endpoint="brands")
 
 
 @app.route("/redetect", methods=["POST"])

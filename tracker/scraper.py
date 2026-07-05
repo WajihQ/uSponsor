@@ -82,7 +82,7 @@ def _fetch_video(video_id):
         return y.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
 
 
-def _store_video(conn, ch, v, known=()):
+def _store_video(conn, ch, v, known=(), aliases=None):
     """Insert a fetched video + its detected sponsorships. Returns (stored?, n_spons, date)."""
     raw_date = v.get("upload_date")  # YYYYMMDD
     upload_date = (
@@ -97,10 +97,11 @@ def _store_video(conn, ch, v, known=()):
         return False, 0, upload_date
     n = 0
     for brand, evidence in detect_sponsors(v.get("description"), known):
+        brand, key = db.apply_alias(brand, aliases or {})
         conn.execute(
             "INSERT OR IGNORE INTO sponsorships (video_ref, brand, brand_key, evidence)"
             " VALUES (?, ?, ?, ?)",
-            (cur.lastrowid, brand, brand_key(brand), evidence),
+            (cur.lastrowid, brand, key, evidence),
         )
         n += 1
     conn.commit()
@@ -116,16 +117,18 @@ def rerun_detection():
     conn = db.connect()
     try:
         known = db.known_brand_names(conn)
+        aliases = db.alias_map(conn)
         videos = conn.execute(
             "SELECT id, description FROM videos WHERE description IS NOT NULL AND description != ''"
         ).fetchall()
         new = 0
         for v in videos:
             for brand, evidence in detect_sponsors(v["description"], known):
+                brand, key = db.apply_alias(brand, aliases)
                 cur = conn.execute(
                     "INSERT OR IGNORE INTO sponsorships (video_ref, brand, brand_key, evidence)"
                     " VALUES (?, ?, ?, ?)",
-                    (v["id"], brand, brand_key(brand), evidence),
+                    (v["id"], brand, key, evidence),
                 )
                 new += cur.rowcount
         conn.commit()
@@ -159,6 +162,7 @@ def scan_channel(conn, ch):
     seen = _known_ids(conn, ch)
     fresh = [e for e in entries if e["id"] not in seen][:MAX_NEW_PER_SCAN]
     known = db.known_brand_names(conn)
+    aliases = db.alias_map(conn)
 
     new_videos = new_spons = 0
     for entry in fresh:
@@ -167,7 +171,7 @@ def scan_channel(conn, ch):
         except Exception as exc:  # video may be private/removed; keep going
             _log(f"  ! skipped {entry['id']}: {exc}")
             continue
-        stored, n, _ = _store_video(conn, ch, v, known)
+        stored, n, _ = _store_video(conn, ch, v, known, aliases)
         new_videos += stored
         new_spons += n
     return name, new_videos, new_spons
@@ -183,6 +187,7 @@ def backfill_channel(conn, ch, cutoff):
     _update_channel_meta(conn, ch, channel_id, name)
     seen = _known_ids(conn, ch)
     known = db.known_brand_names(conn)
+    aliases = db.alias_map(conn)
 
     new_videos = new_spons = fetched = 0
     completed = True
@@ -202,7 +207,7 @@ def backfill_channel(conn, ch, cutoff):
             _log(f"  ! skipped {entry['id']}: {exc}")
             continue
         fetched += 1
-        stored, n, upload_date = _store_video(conn, ch, v, known)
+        stored, n, upload_date = _store_video(conn, ch, v, known, aliases)
         new_videos += stored
         new_spons += n
         _set_current(f"{name} — {new_videos} video(s) so far ({upload_date or '?'})")

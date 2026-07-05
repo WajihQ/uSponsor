@@ -76,8 +76,12 @@ Open http://127.0.0.1:5000
    being suggested, or **erroneous** and it disappears from the dashboard
    and suggestions entirely (reversible). Brand names in both columns are
    editable in place — renaming one onto another's name **consolidates**
-   them (e.g. "Opera Air" → "Opera" merges their sponsorship history).
-   Matching ignores case and punctuation. Known brands also boost detection: a mention near sponsor
+   them (e.g. "Opera Air" → "Opera" merges their sponsorship history), and
+   the consolidation is remembered as an **alias** so future scans map the
+   variant straight to the canonical name (manage aliases on the same tab).
+   Each brand's 🔍 opens a **detail page**: per-month sponsorship timeline,
+   every creator it worked with (with agency and closed status), and the
+   full video list. Matching ignores case and punctuation. Known brands also boost detection: a mention near sponsor
    language ("use code…", "% off", "partner") is caught even when the
    disclosure phrasing is unusual.
 8. Video descriptions are stored in the database, so **Re-run detection**

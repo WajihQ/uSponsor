@@ -46,8 +46,8 @@ a.see:hover { opacity:1; background:var(--chip-bg); text-decoration:none; }
              title="Edit to rename — using another brand's name merges them (e.g. Opera Air → Opera)">
       <button>Save</button>
     </form>
-    <a href="{{ url_for('dashboard', brand=key, days='all') }}" class="see"
-       title="See every creator {{ name }} worked with">🔍</a>
+    <a href="{{ url_for('brand_detail', key=key) }}" class="see"
+       title="Open {{ name }}'s detail page — creators, timeline, videos">🔍</a>
   </span>
 {% endmacro %}
 
@@ -138,8 +138,8 @@ a.see:hover { opacity:1; background:var(--chip-bg); text-decoration:none; }
       <tr>
         <td>
           <b>{{ m.name }}</b>{{ ' ✓' if m.kind == 'known' }}{{ ' 🚫' if m.kind == 'boycott' }}
-          <a href="{{ url_for('dashboard', brand=m.brand_key, days='all') }}" class="see"
-             title="See every creator {{ m.name }} worked with">🔍</a>
+          <a href="{{ url_for('brand_detail', key=m.brand_key) }}" class="see"
+             title="Open {{ m.name }}'s detail page — creators, timeline, videos">🔍</a>
         </td>
         <td class="num">{{ m.n }}</td>
         <td class="num">{{ m.creators }}</td>
@@ -258,6 +258,30 @@ a.see:hover { opacity:1; background:var(--chip-bg); text-decoration:none; }
     {{ pager('p_err', err_p, err_pp) }}
     {% else %}
       <p class="sub">Nothing flagged yet. Use the “Erroneous” button on a suggestion.</p>
+    {% endif %}
+
+    <h2 style="margin-top:22px">Aliases</h2>
+    <p class="sub">Created automatically when you rename-consolidate a brand — future scans map
+       these variants straight to the canonical name.</p>
+    {% if alias_rows %}
+    <div class="scroll">
+      <table>
+        <tr><th>Variant</th><th>Consolidates into</th><th></th></tr>
+        {% for a in alias_rows %}
+        <tr>
+          <td class="count">{{ a.alias_key }}</td>
+          <td><b>{{ a.canonical }}</b></td>
+          <td>
+            <form method="post" action="{{ url_for('alias_delete', alias_key=a.alias_key) }}" data-ajax="remove-row" data-done="Alias removed">
+              <button class="ibtn danger" title="Remove alias — future scans record this name separately">✕</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    {% else %}
+      <p class="sub">No aliases yet — rename a brand onto another's name to create one.</p>
     {% endif %}
   </div>
 </div>

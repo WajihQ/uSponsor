@@ -49,6 +49,11 @@ CREATE TABLE IF NOT EXISTS sponsorships (
     UNIQUE (video_ref, brand_key)
 );
 
+CREATE TABLE IF NOT EXISTS brand_aliases (
+    alias_key TEXT PRIMARY KEY,                   -- normalized key of the variant name
+    canonical TEXT NOT NULL                       -- display name it consolidates into
+);
+
 CREATE INDEX IF NOT EXISTS idx_videos_channel ON videos(channel_ref);
 CREATE INDEX IF NOT EXISTS idx_videos_date ON videos(upload_date);
 CREATE INDEX IF NOT EXISTS idx_spons_brand ON sponsorships(brand_key);
@@ -224,6 +229,21 @@ def import_brand_lines(text, kind="known"):
                 )
                 (added if cur.rowcount else skipped).append(name)
     return added, skipped
+
+
+def alias_map(conn):
+    """{alias_key: canonical display name} for detection-time consolidation."""
+    return {r["alias_key"]: r["canonical"] for r in conn.execute("SELECT * FROM brand_aliases")}
+
+
+def apply_alias(brand, amap):
+    """Map a detected brand name through the alias table. -> (name, key)"""
+    from .detector import brand_key
+    key = brand_key(brand)
+    if key in amap:
+        canonical = amap[key]
+        return canonical, brand_key(canonical)
+    return brand, key
 
 
 def known_brand_names(conn):

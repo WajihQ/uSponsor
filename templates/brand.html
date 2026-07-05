@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}{{ head.name }} — uSponsor{% endblock %}
+{% block style %}
+.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:20px; }
+.tile { background:var(--surface); border:1px solid var(--ring); border-radius:12px; padding:14px 16px; }
+.tile .v { font-size:26px; font-weight:700; line-height:1.1; }
+.tile .l { color:var(--muted); font-size:12.5px; margin-top:2px; }
+.bhead { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin:4px 0 16px; }
+.bhead h1 { margin:0; font-size:24px; }
+.kind { font-size:12px; font-weight:700; border:1px solid var(--ring); border-radius:999px; padding:2px 10px; color:var(--ink-2); }
+.chart { display:flex; align-items:flex-end; gap:8px; height:120px; padding:6px 2px 0; }
+.chart .col { flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:4px; min-width:36px; }
+.chart .bar { width:100%; max-width:44px; background:var(--accent); border-radius:4px 4px 0 0; min-height:2px; }
+.chart .n { font-size:11.5px; font-weight:600; color:var(--ink-2); font-variant-numeric:tabular-nums; }
+.chart .m { font-size:10.5px; color:var(--muted); white-space:nowrap; }
+.ev { color:var(--muted); font-size:12px; }
+.alias { font-size:12.5px; color:var(--ink-2); }
+{% endblock %}
+
+{% block content %}
+<div class="bhead">
+  <h1>{{ head.name }}</h1>
+  {% if kind == 'known' %}<span class="kind">✓ in your CRM</span>
+  {% elif kind == 'boycott' %}<span class="kind">🚫 boycotted</span>
+  {% elif kind == 'erroneous' %}<span class="kind">flagged erroneous</span>{% endif %}
+  <a href="{{ url_for('dashboard', brand=key, days='all') }}">open in dashboard →</a>
+  <span class="spacer" style="flex:1"></span>
+  <a href="{{ url_for('brands') }}">‹ back to Brands</a>
+</div>
+
+{% if aliases %}
+<p class="alias">Also recorded as: {{ aliases | join(', ') }} (consolidated into this brand).</p>
+{% endif %}
+
+<div class="tiles">
+  <div class="tile"><div class="v num">{{ head.total }}</div><div class="l">sponsorships (all time)</div></div>
+  <div class="tile"><div class="v num">{{ head.creators }}</div><div class="l">creators worked with</div></div>
+  <div class="tile"><div class="v num">{{ head.first_seen or '—' }}</div><div class="l">first seen</div></div>
+  <div class="tile"><div class="v num">{{ head.last_seen or '—' }}</div><div class="l">most recent</div></div>
+</div>
+
+{% if months %}
+<div class="card">
+  <h2>Sponsorships per month</h2>
+  <p class="sub">Last {{ months | length }} month(s) with activity.</p>
+  <div class="chart">
+    {% for m in months %}
+    <div class="col" title="{{ m.month }}: {{ m.n }} sponsorship(s)">
+      <span class="n">{{ m.n }}</span>
+      <div class="bar" style="height:{{ (m.n / month_max * 96) | round(1) }}px"></div>
+      <span class="m">{{ m.month }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Creators {{ head.name }} sponsored</h2>
+  <p class="sub">Most-sponsored first — your warmest intros are at the top.</p>
+  <div class="scroll">
+    <table>
+      <tr><th>Creator</th><th>Sponsorships</th><th>Last seen</th><th>Agency</th><th></th></tr>
+      {% for c in creators %}
+      <tr>
+        <td><b>{{ c.name }}</b>{{ ' ✓' if c.status == 'closed' }}</td>
+        <td class="num">{{ c.n }}</td>
+        <td class="num">{{ c.last_seen or '—' }}</td>
+        <td>{{ c.agency or '—' }}</td>
+        <td><a href="{{ url_for('dashboard', brand=key, creator=c.id, days='all') }}">history →</a></td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Sponsored videos</h2>
+  <p class="sub">Latest 50, with the disclosure that was detected.</p>
+  <div class="scroll">
+    <table>
+      <tr><th>Date</th><th>Creator</th><th>Video</th><th>Disclosure found</th></tr>
+      {% for v in videos %}
+      <tr>
+        <td class="num" style="white-space:nowrap">{{ v.upload_date or '—' }}</td>
+        <td>{{ v.creator }}</td>
+        <td><a href="{{ v.url }}" target="_blank">{{ v.title }}</a></td>
+        <td class="ev">…{{ v.evidence }}…</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endblock %}
