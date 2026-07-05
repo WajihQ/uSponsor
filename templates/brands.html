@@ -18,6 +18,9 @@ td { padding:3px 8px; }
 .acts form { display:inline; }
 .ibtn { width:28px; height:26px; padding:0; font-size:13px; line-height:1; border-radius:6px; }
 .ibtn:hover { border-color:var(--accent); }
+a.see { text-decoration:none; font-size:12px; opacity:.55; padding:2px 4px; border-radius:6px; }
+a.see:hover { opacity:1; background:var(--chip-bg); text-decoration:none; }
+.kbadge { font-size:11px; font-weight:700; color:var(--good); }
 .pager { display:flex; gap:14px; align-items:center; margin-top:10px; font-size:13px; color:var(--ink-2); }
 .pager a { font-weight:600; }
 .pager .dis { color:var(--muted); }
@@ -36,12 +39,16 @@ td { padding:3px 8px; }
 {% endmacro %}
 
 {% macro rename_form(key, name) %}
-  <form method="post" action="{{ url_for('brands_rename') }}" class="rename" data-ajax="toast" data-done="Renamed — matching entries consolidated">
-    <input type="hidden" name="old_key" value="{{ key }}">
-    <input type="text" name="new_name" value="{{ name }}"
-           title="Edit to rename — using another brand's name merges them (e.g. Opera Air → Opera)">
-    <button>Save</button>
-  </form>
+  <span style="display:inline-flex; align-items:center; gap:2px">
+    <form method="post" action="{{ url_for('brands_rename') }}" class="rename" data-ajax="toast" data-done="Renamed — matching entries consolidated">
+      <input type="hidden" name="old_key" value="{{ key }}">
+      <input type="text" name="new_name" value="{{ name }}"
+             title="Edit to rename — using another brand's name merges them (e.g. Opera Air → Opera)">
+      <button>Save</button>
+    </form>
+    <a href="{{ url_for('dashboard', brand=key, days='all') }}" class="see"
+       title="See every creator {{ name }} worked with">🔍</a>
+  </span>
 {% endmacro %}
 
 {% macro mark_btns(name) %}
@@ -115,6 +122,34 @@ td { padding:3px 8px; }
     </table>
   </div>
   {{ pager('p_rec', rec_p, rec_pp) }}
+</div>
+{% endif %}
+
+{% set mon, mon_p, mon_pp = monthly %}
+{% if mon %}
+<div class="card">
+  <h2>Most active brands — last 30 days</h2>
+  <p class="sub">Who's spending in your niches right now, busiest first. ✓ = in your CRM, 🚫 = boycotted;
+     unmarked rows are new brands you could pitch.</p>
+  <div class="scroll">
+    <table>
+      <tr><th>Brand</th><th>Sponsorships (30 days)</th><th>Creators</th><th>Last seen</th><th></th></tr>
+      {% for m in mon %}
+      <tr>
+        <td>
+          <b>{{ m.name }}</b>{{ ' ✓' if m.kind == 'known' }}{{ ' 🚫' if m.kind == 'boycott' }}
+          <a href="{{ url_for('dashboard', brand=m.brand_key, days='all') }}" class="see"
+             title="See every creator {{ m.name }} worked with">🔍</a>
+        </td>
+        <td class="num">{{ m.n }}</td>
+        <td class="num">{{ m.creators }}</td>
+        <td class="num">{{ m.last_seen }}</td>
+        <td>{% if not m.kind %}{{ mark_btns(m.name) }}{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {{ pager('p_mon', mon_p, mon_pp) }}
 </div>
 {% endif %}
 

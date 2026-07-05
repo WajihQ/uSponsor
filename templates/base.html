@@ -32,6 +32,11 @@ header nav a.active { color:var(--ink); border-bottom:2px solid var(--accent); p
 .spacer { flex:1; }
 button, .btn { font:inherit; border:1px solid var(--ring); border-radius:8px;
   padding:7px 14px; cursor:pointer; background:var(--surface); color:var(--ink); }
+input[type=file] { font:inherit; color:var(--ink-2); }
+input[type=file]::file-selector-button { font:inherit; font-weight:600; border:1px solid var(--ring);
+  border-radius:8px; padding:7px 14px; margin-right:12px; cursor:pointer;
+  background:var(--surface); color:var(--ink); transition:border-color .12s; }
+input[type=file]::file-selector-button:hover { border-color:var(--accent); color:var(--accent); }
 button.primary { background:var(--accent); color:var(--accent-ink); border-color:transparent; font-weight:600; }
 button.danger { color:var(--bad); }
 button:disabled { opacity:.55; cursor:default; }

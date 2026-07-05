@@ -23,6 +23,9 @@ table.hm { width:auto; }
 .hm td { border:none; padding:2px; }
 .hm th { border:none; }
 .hm .rowlab { font-size:12.5px; font-weight:600; padding-right:10px; white-space:nowrap; }
+.hm .rowlab a, .hm .collab a, td a b { color:inherit; }
+.hm .rowlab a:hover, .hm .collab a:hover { color:var(--accent); text-decoration:none; }
+td a:hover b { color:var(--accent); }
 .hm .collab { font-size:11.5px; color:var(--muted); font-weight:600; padding:0 4px 6px;
               text-align:center; vertical-align:bottom; max-width:90px; overflow:hidden;
               text-overflow:ellipsis; white-space:nowrap; }
@@ -172,12 +175,12 @@ table.hm { width:auto; }
     <table class="hm">
       <tr>
         <th></th>
-        {% for cr in heatmap.creators %}<td class="collab" title="{{ cr }}">{{ cr }}</td>{% endfor %}
+        {% for cr in heatmap.creators %}<td class="collab" title="Filter to {{ cr }}">{% if cr in creator_ids %}<a href="{{ filt_url('creator', creator_ids[cr]) }}">{{ cr }}</a>{% else %}{{ cr }}{% endif %}</td>{% endfor %}
         <td class="collab">total</td>
       </tr>
       {% for row in heatmap.rows %}
       <tr>
-        <td class="rowlab">{{ row.brand }}</td>
+        <td class="rowlab"><a href="{{ filt_url('brand', row.key) }}" title="Filter to {{ row.brand }}">{{ row.brand }}</a></td>
         {% for n in row.cells %}
           {% if n == 0 %}
             <td class="c c0"></td>
@@ -219,8 +222,8 @@ table.hm { width:auto; }
       {% for r in rows %}
       <tr>
         <td class="num" style="white-space:nowrap">{{ r.upload_date or '—' }}</td>
-        <td><b>{{ r.brand }}</b>{{ ' 🚫' if r.brand_key in boycott_keys }}</td>
-        <td>{{ r.creator }}</td>
+        <td><a href="{{ filt_url('brand', r.brand_key) }}" title="Filter to {{ r.brand }}"><b>{{ r.brand }}</b></a>{{ ' 🚫' if r.brand_key in boycott_keys }}</td>
+        <td><a href="{{ filt_url('creator', r.creator_id) }}" title="Filter to {{ r.creator }}">{{ r.creator }}</a></td>
         <td><a href="{{ r.url }}" target="_blank">{{ r.title }}</a></td>
         <td class="ev">…{{ r.evidence }}…</td>
       </tr>

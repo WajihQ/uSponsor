@@ -166,6 +166,7 @@ def dashboard():
         "rows": [
             {
                 "brand": disp,
+                "key": key,
                 "cells": [cell.get((key, cr), 0) for cr in creators_in_grid],
                 "total": total,
             }
@@ -192,6 +193,10 @@ def dashboard():
         all_brands=all_brands, all_creators=all_creators, closed_names=closed_names,
         limit=limit, page=page, pages=pages, total=total, boycott_keys=boycott_keys,
         page_url=lambda p: url_for("dashboard", **{**request.args.to_dict(), "page": p}),
+        filt_url=lambda k, v: url_for(
+            "dashboard", **{**{kk: vv for kk, vv in request.args.to_dict().items() if kk != "page"}, k: v}
+        ),
+        creator_ids={r["name"]: r["id"] for r in all_creators},
         clear_url=lambda param: url_for(
             "dashboard", **{k: v for k, v in request.args.to_dict().items() if k not in (param, "page")}
         ),
@@ -322,6 +327,20 @@ def brands():
             " GROUP BY s.brand_key ORDER BY last_seen DESC, n DESC",
             (week_start,),
         ).fetchall()
+        # most active brands over the past month — includes known/boycott
+        # (badged), excludes only erroneous junk
+        month_start = (dt.date.today() - dt.timedelta(days=29)).isoformat()
+        monthly = conn.execute(
+            "SELECT s.brand_key, MIN(s.brand) AS name, COUNT(*) AS n,"
+            " COUNT(DISTINCT c.id) AS creators, MAX(v.upload_date) AS last_seen,"
+            " (SELECT kind FROM brands b WHERE b.brand_key = s.brand_key) AS kind"
+            " FROM sponsorships s JOIN videos v ON v.id = s.video_ref"
+            " JOIN channels c ON c.id = v.channel_ref"
+            " WHERE s.brand_key NOT IN (SELECT brand_key FROM brands WHERE kind = 'erroneous')"
+            " AND v.upload_date >= ?"
+            " GROUP BY s.brand_key ORDER BY n DESC, last_seen DESC",
+            (month_start,),
+        ).fetchall()
     finally:
         conn.close()
     return render_template(
@@ -331,6 +350,7 @@ def brands():
         erroneous=_pageof(erroneous, "p_err"),
         boycott=_pageof(boycott, "p_boy"),
         recent=_pageof(recent, "p_rec", per=25),
+        monthly=_pageof(monthly, "p_mon", per=25),
         page_url=lambda arg, p: url_for("brands", **{**request.args.to_dict(), arg: p}),
         scan=scraper.STATE,
     )
