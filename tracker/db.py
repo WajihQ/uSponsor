@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS channels (
     status      TEXT NOT NULL DEFAULT 'prospect', -- 'prospect' | 'closed'
     niche       TEXT,                             -- e.g. 'Tech'
     subniche    TEXT,                             -- e.g. 'Mini PCs'
-    agency      TEXT                              -- managing agency, if repped elsewhere
+    agency      TEXT,                             -- managing agency, if repped elsewhere
+    backfilled_to TEXT                            -- oldest date a completed backfill covered
 );
 
 CREATE TABLE IF NOT EXISTS brands (
@@ -75,6 +76,8 @@ def init_db():
             conn.execute("ALTER TABLE channels ADD COLUMN subniche TEXT")
         if "agency" not in cols:
             conn.execute("ALTER TABLE channels ADD COLUMN agency TEXT")
+        if "backfilled_to" not in cols:
+            conn.execute("ALTER TABLE channels ADD COLUMN backfilled_to TEXT")
         vcols = {r["name"] for r in conn.execute("PRAGMA table_info(videos)")}
         if "description" not in vcols:
             conn.execute("ALTER TABLE videos ADD COLUMN description TEXT")

@@ -386,7 +386,7 @@ def channels_reset(cid):
     conn = db.connect()
     try:
         conn.execute("DELETE FROM videos WHERE channel_ref = ?", (cid,))
-        conn.execute("UPDATE channels SET last_scanned = NULL WHERE id = ?", (cid,))
+        conn.execute("UPDATE channels SET last_scanned = NULL, backfilled_to = NULL WHERE id = ?", (cid,))
         conn.commit()
     finally:
         conn.close()

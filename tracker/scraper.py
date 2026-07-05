@@ -185,6 +185,7 @@ def backfill_channel(conn, ch, cutoff):
     known = db.known_brand_names(conn)
 
     new_videos = new_spons = fetched = 0
+    completed = True
     for entry in entries:
         if entry["id"] in seen:
             stored_date = seen[entry["id"]]
@@ -193,6 +194,7 @@ def backfill_channel(conn, ch, cutoff):
             continue
         if fetched >= BACKFILL_HARD_CAP:
             _log(f"  ! {name}: hit the {BACKFILL_HARD_CAP}-video safety cap — run backfill again to continue")
+            completed = False
             break
         try:
             v = _fetch_video(entry["id"])
@@ -207,6 +209,14 @@ def backfill_channel(conn, ch, cutoff):
         if upload_date and upload_date < cutoff.isoformat():
             break  # reached the cutoff; everything older is out of range
         time.sleep(BACKFILL_SLEEP)
+    if completed:
+        # remember the covered depth so later backfills skip this channel
+        # entirely (keep the deepest coverage if one already exists)
+        conn.execute(
+            "UPDATE channels SET backfilled_to = MIN(COALESCE(backfilled_to, ?), ?) WHERE id = ?",
+            (cutoff.isoformat(), cutoff.isoformat(), ch["id"]),
+        )
+        conn.commit()
     return name, new_videos, new_spons
 
 
@@ -227,23 +237,29 @@ def run_scan(mode="base", years=1, target="all", force=False):
         _log(f"Backfill scan: going back {years} year(s), to {cutoff.isoformat()}")
     conn = db.connect()
     try:
-        where = []
+        where, wargs = [], []
         if target == "closed":
             where.append("status = 'closed'")
         if mode == "base" and not force:
             where.append("(last_scanned IS NULL OR last_scanned <= datetime('now', '-24 hours'))")
+        if mode == "backfill":
+            # skip channels a completed backfill already covered to this depth
+            where.append("(backfilled_to IS NULL OR backfilled_to > ?)")
+            wargs.append(cutoff.isoformat())
         sql = "SELECT * FROM channels"
         if where:
             sql += " WHERE " + " AND ".join(where)
-        channels = conn.execute(sql + " ORDER BY id").fetchall()
+        channels = conn.execute(sql + " ORDER BY id", wargs).fetchall()
         total_all = conn.execute(
             "SELECT COUNT(*) FROM channels" + (" WHERE status = 'closed'" if target == "closed" else "")
         ).fetchone()[0]
         skipped = total_all - len(channels)
-        if skipped:
+        if skipped and mode == "base":
             _log(f"Skipping {skipped} channel(s) scanned within the last 24 hours")
+        elif skipped:
+            _log(f"Skipping {skipped} channel(s) already backfilled to {cutoff.isoformat()} or deeper")
         if not channels:
-            _log("Nothing to scan — all targeted channels were scanned recently.")
+            _log("Nothing to scan — all targeted channels are already covered.")
         with _lock:
             STATE["total"] = len(channels)
 
