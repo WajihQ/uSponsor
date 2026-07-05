@@ -7,12 +7,17 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
 .hint { color:var(--muted); font-size:12px; margin:6px 0 0; }
 .markbtn { padding:4px 10px; font-size:12.5px; }
 .count { color:var(--ink-2); }
+td { padding:3px 8px; }
 .rename { display:flex; gap:5px; align-items:center; }
-.rename input { font:inherit; font-size:13px; font-weight:600; width:150px; padding:4px 7px;
+.rename input { font:inherit; font-size:12.5px; font-weight:600; width:140px; padding:3px 7px;
   border:1px solid transparent; border-radius:6px; background:transparent; color:var(--ink); }
 .rename input:hover, .rename input:focus { border-color:var(--ring); background:var(--page); }
-.rename button { padding:4px 9px; font-size:12px; visibility:hidden; }
+.rename button { padding:3px 9px; font-size:12px; visibility:hidden; }
 .rename:focus-within button { visibility:visible; }
+.acts { display:flex; gap:4px; }
+.acts form { display:inline; }
+.ibtn { width:28px; height:26px; padding:0; font-size:13px; line-height:1; border-radius:6px; }
+.ibtn:hover { border-color:var(--accent); }
 .pager { display:flex; gap:14px; align-items:center; margin-top:10px; font-size:13px; color:var(--ink-2); }
 .pager a { font-weight:600; }
 .pager .dis { color:var(--muted); }
@@ -40,20 +45,22 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
 {% endmacro %}
 
 {% macro mark_btns(name) %}
-  <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked as known">
-    <input type="hidden" name="name" value="{{ name }}">
-    <button class="markbtn" title="Add to known brands — stops suggesting it">Mark as known</button>
-  </form>
-  <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked as boycott — flagged 🚫 on the dashboard">
-    <input type="hidden" name="name" value="{{ name }}">
-    <input type="hidden" name="kind" value="boycott">
-    <button class="markbtn" title="You won't work with them — keeps showing on the dashboard with a 🚫 flag">Boycott</button>
-  </form>
-  <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked erroneous — hidden everywhere">
-    <input type="hidden" name="name" value="{{ name }}">
-    <input type="hidden" name="kind" value="erroneous">
-    <button class="markbtn danger" title="Not a real brand — hide it everywhere">Erroneous</button>
-  </form>
+  <span class="acts">
+    <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked as known">
+      <input type="hidden" name="name" value="{{ name }}">
+      <button class="ibtn" title="Mark as known — in your CRM, stops being suggested">✓</button>
+    </form>
+    <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked as boycott — flagged 🚫 on the dashboard">
+      <input type="hidden" name="name" value="{{ name }}">
+      <input type="hidden" name="kind" value="boycott">
+      <button class="ibtn" title="Boycott — you won't work with them; stays on the dashboard with a 🚫 flag">🚫</button>
+    </form>
+    <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked erroneous — hidden everywhere">
+      <input type="hidden" name="name" value="{{ name }}">
+      <input type="hidden" name="kind" value="erroneous">
+      <button class="ibtn danger" title="Erroneous — not a real brand, hide it everywhere">🗑</button>
+    </form>
+  </span>
 {% endmacro %}
 
 {% block content %}
@@ -148,15 +155,17 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
         <tr>
           <td>{{ rename_form(b.brand_key, b.name) }}</td>
           <td class="num count">{{ b.hits or '—' }}</td>
-          <td style="white-space:nowrap">
-            <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked as boycott">
-              <input type="hidden" name="name" value="{{ b.name }}">
-              <input type="hidden" name="kind" value="boycott">
-              <button class="markbtn">Boycott</button>
-            </form>
-            <form method="post" action="{{ url_for('brands_delete', bid=b.id) }}" data-ajax="remove-row" data-done="Removed — may reappear as a suggestion">
-              <button class="markbtn danger">Remove</button>
-            </form>
+          <td>
+            <span class="acts">
+              <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked as boycott">
+                <input type="hidden" name="name" value="{{ b.name }}">
+                <input type="hidden" name="kind" value="boycott">
+                <button class="ibtn" title="Boycott — you won't work with them">🚫</button>
+              </form>
+              <form method="post" action="{{ url_for('brands_delete', bid=b.id) }}" data-ajax="remove-row" data-done="Removed — may reappear as a suggestion">
+                <button class="ibtn danger" title="Remove from known — may reappear as a suggestion">✕</button>
+              </form>
+            </span>
           </td>
         </tr>
         {% endfor %}
@@ -180,7 +189,7 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
           <td class="num count">{{ b.hits or '—' }}</td>
           <td>
             <form method="post" action="{{ url_for('brands_delete', bid=b.id) }}" data-ajax="remove-row" data-done="Un-boycotted — may reappear as a suggestion">
-              <button class="markbtn">Restore</button>
+              <button class="ibtn" title="Restore — un-boycott, may reappear as a suggestion">↩</button>
             </form>
           </td>
         </tr>
@@ -204,7 +213,7 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
           <td class="num count">{{ b.hits or '—' }}</td>
           <td>
             <form method="post" action="{{ url_for('brands_delete', bid=b.id) }}" data-ajax="remove-row" data-done="Restored — visible again">
-              <button class="markbtn" title="Un-flag — shows up again">Restore</button>
+              <button class="ibtn" title="Restore — un-flag, shows up again">↩</button>
             </form>
           </td>
         </tr>

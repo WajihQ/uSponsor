@@ -330,7 +330,7 @@ def brands():
         known=_pageof(known, "p_known"),
         erroneous=_pageof(erroneous, "p_err"),
         boycott=_pageof(boycott, "p_boy"),
-        recent=_pageof(recent, "p_rec"),
+        recent=_pageof(recent, "p_rec", per=25),
         page_url=lambda arg, p: url_for("brands", **{**request.args.to_dict(), arg: p}),
         scan=scraper.STATE,
     )
