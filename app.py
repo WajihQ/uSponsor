@@ -3,6 +3,7 @@
 Run:  python app.py   then open http://127.0.0.1:5000
 """
 import datetime as dt
+import json
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 
@@ -345,6 +346,16 @@ def brands():
         alias_rows = conn.execute(
             "SELECT alias_key, canonical FROM brand_aliases ORDER BY canonical COLLATE NOCASE"
         ).fetchall()
+        review = conn.execute(
+            "SELECT v.id, v.video_id, v.title, v.url, v.upload_date, v.sb_segments,"
+            " v.review_note, c.name AS creator"
+            " FROM videos v JOIN channels c ON c.id = v.channel_ref"
+            " WHERE v.review = 'pending' ORDER BY v.upload_date DESC LIMIT 100"
+        ).fetchall()
+        review = [
+            {**dict(r), "t": int(json.loads(r["sb_segments"] or "[[0,0]]")[0][0])}
+            for r in review
+        ]
     finally:
         conn.close()
     return render_template(
@@ -355,7 +366,7 @@ def brands():
         boycott=_pageof(boycott, "p_boy"),
         recent=_pageof(recent, "p_rec", per=25),
         monthly=_pageof(monthly, "p_mon", per=25),
-        alias_rows=alias_rows,
+        alias_rows=alias_rows, review=review,
         page_url=lambda arg, p: url_for("brands", **{**request.args.to_dict(), arg: p}),
         scan=scraper.STATE,
     )
@@ -494,6 +505,45 @@ def alias_delete(alias_key):
     finally:
         conn.close()
     return _done("Alias removed — future scans will record that name separately.", endpoint="brands")
+
+
+@app.route("/review/<int:vid>/resolve", methods=["POST"])
+def review_resolve(vid):
+    name = request.form.get("brand", "").strip()[:60]
+    if not name or len(brand_key(name)) < 2:
+        return _done("Brand name too short.", "err", endpoint="brands")
+    conn = db.connect()
+    try:
+        name, key = db.apply_alias(name, db.alias_map(conn))
+        conn.execute(
+            "INSERT OR IGNORE INTO sponsorships (video_ref, brand, brand_key, evidence)"
+            " VALUES (?, ?, ?, 'manual: confirmed from sponsor segment')",
+            (vid, name, key),
+        )
+        conn.execute("UPDATE videos SET review = 'resolved' WHERE id = ?", (vid,))
+        conn.commit()
+    finally:
+        conn.close()
+    return _done(f"Recorded {name} for that video.", endpoint="brands")
+
+
+@app.route("/review/<int:vid>/dismiss", methods=["POST"])
+def review_dismiss(vid):
+    conn = db.connect()
+    try:
+        conn.execute("UPDATE videos SET review = 'dismissed' WHERE id = ?", (vid,))
+        conn.commit()
+    finally:
+        conn.close()
+    return _done("Dismissed — won't be shown again.", endpoint="brands")
+
+
+@app.route("/segments", methods=["POST"])
+def segments():
+    started = scraper.start_segment_pass_in_background()
+    flash("Sponsor-segment check started." if started else "A scan is already running.",
+          "ok" if started else "err")
+    return redirect(url_for("brands"))
 
 
 @app.route("/redetect", methods=["POST"])

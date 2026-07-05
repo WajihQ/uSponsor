@@ -12,6 +12,12 @@ dashboard of who sponsored whom and when.
   "thanks to X for sponsoring", "in partnership with X", "brought to you by X",
   "use code Y at X", and so on. Each hit is stored with the exact disclosure
   text so you can verify it.
+- **SponsorBlock cross-check** (free, community data): every scanned video is
+  checked for in-video paid segments, catching sponsorships the description
+  never disclosed. Flagged videos get their auto-captions read around the
+  segment to name the brand automatically; the few that can't be named land
+  in a review queue on the Brands tab, with links that open the video at the
+  sponsor read and a one-field form to record the brand.
 - **Incremental**: scans only fetch videos not seen before (newest 30 listed,
   max 12 detail-fetched per channel per scan), so repeat runs are quick and
   easy on older hardware.

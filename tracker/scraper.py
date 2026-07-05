@@ -12,14 +12,15 @@ Two scan modes, both writing to the same database:
 """
 import concurrent.futures as cf
 import datetime as dt
+import json
 import os
 import threading
 import time
 
 from yt_dlp import YoutubeDL
 
-from . import db
-from .detector import brand_key, detect_sponsors
+from . import db, sponsorblock
+from .detector import brand_key, detect_sponsors, detect_spoken
 
 LOOKBACK_ENTRIES = 30       # base scan: how many newest uploads to list per channel
 MAX_NEW_PER_SCAN = 12       # base scan: cap detail fetches per channel per scan
@@ -104,6 +105,15 @@ def _store_video(conn, ch, v, known=(), aliases=None):
             (cur.lastrowid, brand, key, evidence),
         )
         n += 1
+    # cheap SponsorBlock lookup: does this video contain a paid segment?
+    try:
+        segs = sponsorblock.fetch_segments(v["id"])
+        conn.execute(
+            "UPDATE videos SET sb_checked = 1, sb_sponsored = ?, sb_segments = ? WHERE id = ?",
+            (1 if segs else 0, json.dumps(segs) if segs else None, cur.lastrowid),
+        )
+    except Exception:
+        pass  # stays sb_checked=0; the post-scan pass retries it
     conn.commit()
     return True, n, upload_date
 
@@ -133,6 +143,91 @@ def rerun_detection():
                 new += cur.rowcount
         conn.commit()
         return len(videos), new
+    finally:
+        conn.close()
+
+
+def _fetch_captions_info(video_id):
+    """Full extract (no player_skip) so caption tracks are present."""
+    with _ydl() as y:
+        return y.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+
+
+def segment_pass(check_limit=300, caption_limit=40):
+    """Post-scan SponsorBlock pass. Returns (checked, flagged, named, pending).
+
+    1. Query SponsorBlock for stored videos not yet checked (newest first,
+       capped per run so a big backlog drains across scans).
+    2. For videos WITH a sponsor segment but NO detected brand, pull the
+       auto-captions and run detection on the spoken sponsor read. Whatever
+       can't be auto-named lands in the review queue ('pending').
+    """
+    conn = db.connect()
+    checked = flagged = named = pending = 0
+    try:
+        rows = conn.execute(
+            "SELECT id, video_id FROM videos WHERE sb_checked = 0"
+            " ORDER BY upload_date DESC LIMIT ?",
+            (check_limit,),
+        ).fetchall()
+        for r in rows:
+            try:
+                segs = sponsorblock.fetch_segments(r["video_id"])
+            except Exception:
+                continue  # network hiccup: stays unchecked, retried next pass
+            checked += 1
+            flagged += bool(segs)
+            conn.execute(
+                "UPDATE videos SET sb_checked = 1, sb_sponsored = ?, sb_segments = ? WHERE id = ?",
+                (1 if segs else 0, json.dumps(segs) if segs else None, r["id"]),
+            )
+        conn.commit()
+
+        known = db.known_brand_names(conn)
+        aliases = db.alias_map(conn)
+        todo = conn.execute(
+            "SELECT v.id, v.video_id, v.sb_segments FROM videos v"
+            " WHERE v.sb_sponsored = 1 AND v.review IS NULL"
+            " AND NOT EXISTS (SELECT 1 FROM sponsorships s WHERE s.video_ref = v.id)"
+            " ORDER BY v.upload_date DESC LIMIT ?",
+            (caption_limit,),
+        ).fetchall()
+        for v in todo:
+            _set_current(f"naming sponsor segments ({named + pending + 1}/{len(todo)})")
+            segs = [tuple(s) for s in json.loads(v["sb_segments"] or "[]")]
+            text = ""
+            try:
+                info = _fetch_captions_info(v["video_id"])
+                cap_url = sponsorblock.pick_caption_url(info)
+                if cap_url:
+                    text = sponsorblock.transcript_slice(cap_url, segs)
+            except Exception as exc:
+                _log(f"  ! captions failed for {v['video_id']}: {exc}")
+            brands = detect_spoken(text, known) if text else []
+            if brands:
+                for brand, evidence in brands:
+                    brand, key = db.apply_alias(brand, aliases)
+                    conn.execute(
+                        "INSERT OR IGNORE INTO sponsorships (video_ref, brand, brand_key, evidence)"
+                        " VALUES (?, ?, ?, ?)",
+                        (v["id"], brand, key, "spoken: " + evidence),
+                    )
+                conn.execute("UPDATE videos SET review = 'resolved' WHERE id = ?", (v["id"],))
+                named += 1
+            else:
+                conn.execute(
+                    "UPDATE videos SET review = 'pending', review_note = ? WHERE id = ?",
+                    (text[:200] or None, v["id"]),
+                )
+                pending += 1
+            conn.commit()
+            time.sleep(0.5)
+        if checked or todo:
+            _log(
+                f"Sponsor segments: {checked} video(s) checked, {flagged} with paid segments,"
+                f" {named} auto-named from captions, {pending} sent to review"
+            )
+        return checked, flagged, named, pending
     finally:
         conn.close()
 
@@ -297,12 +392,38 @@ def run_scan(mode="base", years=1, target="all", force=False):
             # and cuts wall time roughly by the worker count
             with cf.ThreadPoolExecutor(max_workers=SCAN_WORKERS) as pool:
                 list(pool.map(work, channels))
+        try:
+            segment_pass()
+        except Exception as exc:
+            _log(f"Sponsor-segment pass failed: {exc}")
     finally:
         conn.close()
         with _lock:
             STATE["running"] = False
             STATE["current"] = ""
             STATE["finished_at"] = dt.datetime.now().strftime("%H:%M:%S")
+
+
+def start_segment_pass_in_background():
+    """Run a standalone sponsor-segment pass (bigger caps than post-scan)."""
+    with _lock:
+        if STATE["running"]:
+            return False
+        STATE.update(running=True, mode="segments", done=0, total=0, current="", log=[], finished_at=None)
+
+    def go():
+        try:
+            segment_pass(check_limit=1000, caption_limit=100)
+        except Exception as exc:
+            _log(f"Sponsor-segment pass failed: {exc}")
+        finally:
+            with _lock:
+                STATE["running"] = False
+                STATE["current"] = ""
+                STATE["finished_at"] = dt.datetime.now().strftime("%H:%M:%S")
+
+    threading.Thread(target=go, daemon=True).start()
+    return True
 
 
 def start_scan_in_background(mode="base", years=1, target="all", force=False):

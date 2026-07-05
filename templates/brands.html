@@ -101,7 +101,45 @@ a.see:hover { opacity:1; background:var(--chip-bg); text-decoration:none; }
   </form>
   <p class="hint">Only videos scanned by recent versions have their descriptions stored. To recover an
      older channel, use “Re-scan fresh” on the Channels page, then scan.</p>
+  <form method="post" action="{{ url_for('segments') }}" style="margin-top:12px">
+    <button {{ 'disabled' if scan.running }}>Check sponsor segments now</button>
+  </form>
+  <p class="hint">Queries SponsorBlock for stored videos not yet checked (also runs automatically
+     after every scan) and names flagged sponsors from captions where possible.</p>
 </div>
+
+{% if review %}
+<div class="card" style="border-left:3px solid #eda100">
+  <h2>Needs review — paid segment found, brand unknown ({{ review | length }})</h2>
+  <p class="sub">SponsorBlock says these videos contain a sponsor segment, but neither the
+     description nor the captions named a brand. Links open at the sponsor read — listen a few
+     seconds, type the brand, done.</p>
+  <div class="scroll">
+    <table>
+      <tr><th>Date</th><th>Creator</th><th>Video (opens at segment)</th><th>Caption snippet</th><th>Brand</th><th></th></tr>
+      {% for r in review %}
+      <tr>
+        <td class="num" style="white-space:nowrap">{{ r.upload_date or '—' }}</td>
+        <td>{{ r.creator }}</td>
+        <td><a href="{{ r.url }}&t={{ r.t }}s" target="_blank">{{ r.title }}</a></td>
+        <td class="count" style="font-size:12px">{{ (r.review_note or '—') | truncate(90) }}</td>
+        <td>
+          <form method="post" action="{{ url_for('review_resolve', vid=r.id) }}" class="rename" data-ajax="remove-row" data-done="Sponsorship recorded">
+            <input type="text" name="brand" placeholder="Brand name" required style="border-color:var(--ring)">
+            <button style="visibility:visible">Save</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('review_dismiss', vid=r.id) }}" data-ajax="remove-row" data-done="Dismissed">
+            <button class="ibtn" title="No identifiable brand / not relevant — dismiss">✕</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endif %}
 
 {% if rec %}
 <div class="card" style="border-left:3px solid var(--accent)">

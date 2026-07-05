@@ -112,6 +112,25 @@ def _clean(blob):
     return s
 
 
+def detect_spoken(text, known_brands=()):
+    """Detect sponsors in a transcript slice from inside a known sponsor segment.
+
+    Same disclosure patterns as descriptions, but a known-brand mention needs
+    no extra context — the SponsorBlock segment already establishes it.
+    """
+    if not text:
+        return []
+    found = {brand_key(b): (b, e) for b, e in detect_sponsors(text)}
+    for name, key in known_brands:
+        if key in found:
+            continue
+        m = re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", text, re.I)
+        if m:
+            start = max(0, m.start() - 40)
+            found[key] = (name, re.sub(r"\s+", " ", text[start : m.end() + 60]).strip())
+    return list(found.values())
+
+
 def detect_sponsors(text, known_brands=()):
     """Return [(brand, evidence)] found in a description. Deduped by brand_key.
 

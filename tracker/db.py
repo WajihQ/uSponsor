@@ -37,7 +37,12 @@ CREATE TABLE IF NOT EXISTS videos (
     url         TEXT,
     upload_date TEXT,                   -- YYYY-MM-DD
     scanned_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    description TEXT                    -- kept so detection can be re-run offline
+    description TEXT,                   -- kept so detection can be re-run offline
+    sb_checked  INTEGER NOT NULL DEFAULT 0,  -- SponsorBlock queried yet?
+    sb_sponsored INTEGER,               -- 1 = has a sponsor segment
+    sb_segments TEXT,                   -- JSON [[start,end],...] seconds
+    review      TEXT,                   -- NULL | 'pending' | 'resolved' | 'dismissed'
+    review_note TEXT                    -- caption snippet shown in the review queue
 );
 
 CREATE TABLE IF NOT EXISTS sponsorships (
@@ -86,6 +91,12 @@ def init_db():
         vcols = {r["name"] for r in conn.execute("PRAGMA table_info(videos)")}
         if "description" not in vcols:
             conn.execute("ALTER TABLE videos ADD COLUMN description TEXT")
+        if "sb_checked" not in vcols:
+            conn.execute("ALTER TABLE videos ADD COLUMN sb_checked INTEGER NOT NULL DEFAULT 0")
+            conn.execute("ALTER TABLE videos ADD COLUMN sb_sponsored INTEGER")
+            conn.execute("ALTER TABLE videos ADD COLUMN sb_segments TEXT")
+            conn.execute("ALTER TABLE videos ADD COLUMN review TEXT")
+            conn.execute("ALTER TABLE videos ADD COLUMN review_note TEXT")
         bcols = {r["name"] for r in conn.execute("PRAGMA table_info(brands)")}
         if bcols and "kind" not in bcols:
             conn.execute("ALTER TABLE brands ADD COLUMN kind TEXT NOT NULL DEFAULT 'known'")
