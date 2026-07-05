@@ -13,9 +13,56 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
 .rename input:hover, .rename input:focus { border-color:var(--ring); background:var(--page); }
 .rename button { padding:4px 9px; font-size:12px; visibility:hidden; }
 .rename:focus-within button { visibility:visible; }
+.pager { display:flex; gap:14px; align-items:center; margin-top:10px; font-size:13px; color:var(--ink-2); }
+.pager a { font-weight:600; }
+.pager .dis { color:var(--muted); }
 {% endblock %}
 
+{% macro pager(arg, page, pages) %}
+  {% if pages > 1 %}
+  <div class="pager">
+    {% if page > 1 %}<a href="{{ page_url(arg, page - 1) }}">‹ Prev</a>
+    {% else %}<span class="dis">‹ Prev</span>{% endif %}
+    <span>Page {{ page }} of {{ pages }}</span>
+    {% if page < pages %}<a href="{{ page_url(arg, page + 1) }}">Next ›</a>
+    {% else %}<span class="dis">Next ›</span>{% endif %}
+  </div>
+  {% endif %}
+{% endmacro %}
+
+{% macro rename_form(key, name) %}
+  <form method="post" action="{{ url_for('brands_rename') }}" class="rename" data-ajax="toast" data-done="Renamed — matching entries consolidated">
+    <input type="hidden" name="old_key" value="{{ key }}">
+    <input type="text" name="new_name" value="{{ name }}"
+           title="Edit to rename — using another brand's name merges them (e.g. Opera Air → Opera)">
+    <button>Save</button>
+  </form>
+{% endmacro %}
+
+{% macro mark_btns(name) %}
+  <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked as known">
+    <input type="hidden" name="name" value="{{ name }}">
+    <button class="markbtn" title="Add to known brands — stops suggesting it">Mark as known</button>
+  </form>
+  <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked as boycott — flagged 🚫 on the dashboard">
+    <input type="hidden" name="name" value="{{ name }}">
+    <input type="hidden" name="kind" value="boycott">
+    <button class="markbtn" title="You won't work with them — keeps showing on the dashboard with a 🚫 flag">Boycott</button>
+  </form>
+  <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked erroneous — hidden everywhere">
+    <input type="hidden" name="name" value="{{ name }}">
+    <input type="hidden" name="kind" value="erroneous">
+    <button class="markbtn danger" title="Not a real brand — hide it everywhere">Erroneous</button>
+  </form>
+{% endmacro %}
+
 {% block content %}
+{% set sug, sug_p, sug_pp = suggestions %}
+{% set kn, kn_p, kn_pp = known %}
+{% set err, err_p, err_pp = erroneous %}
+{% set boy, boy_p, boy_pp = boycott %}
+{% set rec, rec_p, rec_pp = recent %}
+
 <div class="card">
   <h2>Import your CRM brands</h2>
   <p class="sub">Upload a .txt / .csv of brand names (one per line). Detected sponsors already in
@@ -42,105 +89,71 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
      older channel, use “Re-scan fresh” on the Channels page, then scan.</p>
 </div>
 
-{% if recent %}
+{% if rec %}
 <div class="card" style="border-left:3px solid var(--accent)">
-  <h2>Recent suggestions — sponsored this week, not in your CRM ({{ recent | length }})</h2>
+  <h2>Recent suggestions — sponsored this week, not in your CRM</h2>
   <p class="sub">Fresh leads: brands that appeared in the last 7 days of uploads and aren't in your known list.</p>
   <div class="scroll">
     <table>
       <tr><th>Brand</th><th>Sponsorships (7 days)</th><th>Creators</th><th>Last seen</th><th></th></tr>
-      {% for s in recent %}
+      {% for s in rec %}
       <tr>
-        <td>
-          <form method="post" action="{{ url_for('brands_rename') }}" class="rename" data-ajax="toast" data-done="Renamed — matching entries consolidated">
-            <input type="hidden" name="old_key" value="{{ s.brand_key }}">
-            <input type="text" name="new_name" value="{{ s.name }}"
-                   title="Edit to rename — using another brand's name merges them">
-            <button>Save</button>
-          </form>
-        </td>
+        <td>{{ rename_form(s.brand_key, s.name) }}</td>
         <td class="num">{{ s.n }}</td>
         <td class="num">{{ s.creators }}</td>
         <td class="num">{{ s.last_seen }}</td>
-        <td style="white-space:nowrap">
-          <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked as known">
-            <input type="hidden" name="name" value="{{ s.name }}">
-            <button class="markbtn">Mark as known</button>
-          </form>
-          <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked erroneous — hidden everywhere">
-            <input type="hidden" name="name" value="{{ s.name }}">
-            <input type="hidden" name="kind" value="erroneous">
-            <button class="markbtn danger">Erroneous</button>
-          </form>
-        </td>
+        <td style="white-space:nowrap">{{ mark_btns(s.name) }}</td>
       </tr>
       {% endfor %}
     </table>
   </div>
+  {{ pager('p_rec', rec_p, rec_pp) }}
 </div>
 {% endif %}
 
 <div class="two">
   <div class="card">
-    <h2>Suggestions — not in your CRM ({{ suggestions | length }})</h2>
+    <h2>Suggestions — not in your CRM</h2>
     <p class="sub">Brands detected sponsoring your tracked creators that you haven't imported or
        marked yet. Mark one as known and it stops being suggested.</p>
-    {% if suggestions %}
+    {% if sug %}
     <div class="scroll">
       <table>
         <tr><th>Brand</th><th>Sponsorships</th><th>Creators</th><th>Last seen</th><th></th></tr>
-        {% for s in suggestions %}
+        {% for s in sug %}
         <tr>
-          <td>
-            <form method="post" action="{{ url_for('brands_rename') }}" class="rename" data-ajax="toast" data-done="Renamed — matching entries consolidated">
-              <input type="hidden" name="old_key" value="{{ s.brand_key }}">
-              <input type="text" name="new_name" value="{{ s.name }}"
-                     title="Edit to rename — using another brand's name merges them (e.g. Opera Air → Opera)">
-              <button>Save</button>
-            </form>
-          </td>
+          <td>{{ rename_form(s.brand_key, s.name) }}</td>
           <td class="num">{{ s.n }}</td>
           <td class="num">{{ s.creators }}</td>
           <td class="num">{{ s.last_seen or '—' }}</td>
-          <td style="white-space:nowrap">
-            <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked as known">
-              <input type="hidden" name="name" value="{{ s.name }}">
-              <button class="markbtn" title="Add to known brands — stops suggesting it">Mark as known</button>
-            </form>
-            <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked erroneous — hidden everywhere">
-              <input type="hidden" name="name" value="{{ s.name }}">
-              <input type="hidden" name="kind" value="erroneous">
-              <button class="markbtn danger" title="Not a real brand — hide it everywhere">Erroneous</button>
-            </form>
-          </td>
+          <td style="white-space:nowrap">{{ mark_btns(s.name) }}</td>
         </tr>
         {% endfor %}
       </table>
     </div>
+    {{ pager('p_sug', sug_p, sug_pp) }}
     {% else %}
       <p class="sub">Nothing to suggest — every detected brand is already in your known list. 🎉</p>
     {% endif %}
   </div>
 
   <div class="card">
-    <h2>Known brands ({{ known | length }})</h2>
+    <h2>Known brands</h2>
     <p class="sub">From your CRM imports and manual marks.</p>
-    {% if known %}
+    {% if kn %}
     <div class="scroll">
       <table>
         <tr><th>Brand</th><th>Detected</th><th></th></tr>
-        {% for b in known %}
+        {% for b in kn %}
         <tr>
-          <td>
-            <form method="post" action="{{ url_for('brands_rename') }}" class="rename" data-ajax="toast" data-done="Renamed — matching entries consolidated">
-              <input type="hidden" name="old_key" value="{{ b.brand_key }}">
-              <input type="text" name="new_name" value="{{ b.name }}"
-                     title="Edit to rename — using another brand's name merges them">
-              <button>Save</button>
-            </form>
-          </td>
+          <td>{{ rename_form(b.brand_key, b.name) }}</td>
           <td class="num count">{{ b.hits or '—' }}</td>
-          <td>
+          <td style="white-space:nowrap">
+            <form method="post" action="{{ url_for('brands_mark') }}" data-ajax="remove-row" data-done="Marked as boycott">
+              <input type="hidden" name="name" value="{{ b.name }}">
+              <input type="hidden" name="kind" value="boycott">
+              <button class="markbtn">Boycott</button>
+            </form>
             <form method="post" action="{{ url_for('brands_delete', bid=b.id) }}" data-ajax="remove-row" data-done="Removed — may reappear as a suggestion">
               <button class="markbtn danger">Remove</button>
             </form>
@@ -149,17 +162,43 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
         {% endfor %}
       </table>
     </div>
+    {{ pager('p_known', kn_p, kn_pp) }}
     {% else %}
       <p class="sub">No known brands yet — import your CRM list above.</p>
     {% endif %}
 
-    <h2 style="margin-top:22px">Erroneous ({{ erroneous | length }})</h2>
+    <h2 style="margin-top:22px">Boycott 🚫</h2>
+    <p class="sub">Brands you won't work with. Still visible on the dashboard (their activity is
+       useful intel) but flagged 🚫 and never suggested.</p>
+    {% if boy %}
+    <div class="scroll">
+      <table>
+        <tr><th>Brand</th><th>Detected</th><th></th></tr>
+        {% for b in boy %}
+        <tr>
+          <td>{{ b.name }}</td>
+          <td class="num count">{{ b.hits or '—' }}</td>
+          <td>
+            <form method="post" action="{{ url_for('brands_delete', bid=b.id) }}" data-ajax="remove-row" data-done="Un-boycotted — may reappear as a suggestion">
+              <button class="markbtn">Restore</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    {{ pager('p_boy', boy_p, boy_pp) }}
+    {% else %}
+      <p class="sub">Nothing boycotted. Use the “Boycott” button on a suggestion or known brand.</p>
+    {% endif %}
+
+    <h2 style="margin-top:22px">Erroneous</h2>
     <p class="sub">False detections you've flagged — hidden from the dashboard and suggestions.</p>
-    {% if erroneous %}
+    {% if err %}
     <div class="scroll">
       <table>
         <tr><th>Text</th><th>Hidden rows</th><th></th></tr>
-        {% for b in erroneous %}
+        {% for b in err %}
         <tr>
           <td class="count">{{ b.name }}</td>
           <td class="num count">{{ b.hits or '—' }}</td>
@@ -172,6 +211,7 @@ input[type=file] { font:inherit; margin-bottom:10px; display:block; color:var(--
         {% endfor %}
       </table>
     </div>
+    {{ pager('p_err', err_p, err_pp) }}
     {% else %}
       <p class="sub">Nothing flagged yet. Use the “Erroneous” button on a suggestion.</p>
     {% endif %}

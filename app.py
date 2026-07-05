@@ -145,6 +145,10 @@ def dashboard():
                 "SELECT DISTINCT agency FROM channels WHERE agency IS NOT NULL AND agency != '' ORDER BY agency"
             )
         ]
+        boycott_keys = {
+            r["brand_key"]
+            for r in conn.execute("SELECT brand_key FROM brands WHERE kind = 'boycott'")
+        }
     finally:
         conn.close()
 
@@ -186,7 +190,7 @@ def dashboard():
         f_niche=f_niche, f_subniche=f_subniche, all_niches=all_niches, all_subniches=all_subniches,
         f_agency=f_agency, all_agencies=all_agencies,
         all_brands=all_brands, all_creators=all_creators, closed_names=closed_names,
-        limit=limit, page=page, pages=pages, total=total,
+        limit=limit, page=page, pages=pages, total=total, boycott_keys=boycott_keys,
         page_url=lambda p: url_for("dashboard", **{**request.args.to_dict(), "page": p}),
         clear_url=lambda param: url_for(
             "dashboard", **{k: v for k, v in request.args.to_dict().items() if k not in (param, "page")}
@@ -273,20 +277,32 @@ def channels_niche(cid):
     return _done("Creator details updated.", endpoint="channels")
 
 
+def _pageof(rows, arg, per=50):
+    """Slice a result list to the page named by query arg. -> (slice, page, pages)"""
+    try:
+        p = max(int(request.args.get(arg, 1)), 1)
+    except ValueError:
+        p = 1
+    pages = max((len(rows) + per - 1) // per, 1)
+    p = min(p, pages)
+    return rows[(p - 1) * per : p * per], p, pages
+
+
 @app.route("/brands")
 def brands():
     conn = db.connect()
     try:
-        known = conn.execute(
-            "SELECT b.*, "
-            " (SELECT COUNT(*) FROM sponsorships s WHERE s.brand_key = b.brand_key) AS hits"
-            " FROM brands b WHERE b.kind = 'known' ORDER BY b.name COLLATE NOCASE"
-        ).fetchall()
-        erroneous = conn.execute(
-            "SELECT b.*, "
-            " (SELECT COUNT(*) FROM sponsorships s WHERE s.brand_key = b.brand_key) AS hits"
-            " FROM brands b WHERE b.kind = 'erroneous' ORDER BY b.name COLLATE NOCASE"
-        ).fetchall()
+        def brand_list(kind):
+            return conn.execute(
+                "SELECT b.*, "
+                " (SELECT COUNT(*) FROM sponsorships s WHERE s.brand_key = b.brand_key) AS hits"
+                " FROM brands b WHERE b.kind = ? ORDER BY b.name COLLATE NOCASE",
+                (kind,),
+            ).fetchall()
+
+        known = brand_list("known")
+        erroneous = brand_list("erroneous")
+        boycott = brand_list("boycott")
         suggestions = conn.execute(
             "SELECT s.brand_key, MIN(s.brand) AS name, COUNT(*) AS n,"
             " COUNT(DISTINCT c.id) AS creators, MAX(v.upload_date) AS last_seen"
@@ -309,8 +325,14 @@ def brands():
     finally:
         conn.close()
     return render_template(
-        "brands.html", known=known, erroneous=erroneous, suggestions=suggestions,
-        recent=recent, scan=scraper.STATE,
+        "brands.html",
+        suggestions=_pageof(suggestions, "p_sug"),
+        known=_pageof(known, "p_known"),
+        erroneous=_pageof(erroneous, "p_err"),
+        boycott=_pageof(boycott, "p_boy"),
+        recent=_pageof(recent, "p_rec"),
+        page_url=lambda arg, p: url_for("brands", **{**request.args.to_dict(), arg: p}),
+        scan=scraper.STATE,
     )
 
 
@@ -329,7 +351,7 @@ def brands_import():
 def brands_mark():
     name = request.form.get("name", "").strip()
     kind = request.form.get("kind", "known")
-    if kind not in ("known", "erroneous"):
+    if kind not in ("known", "erroneous", "boycott"):
         kind = "known"
     if name:
         db.import_brand_lines(name, kind=kind)
