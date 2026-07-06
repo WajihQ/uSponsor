@@ -30,8 +30,8 @@ PATTERNS = [
     re.compile(r"\bpaid\s+promotion\s+(?:by|from)\s+" + _BLOB, re.I),
     # "today's (video) sponsor is X"
     re.compile(r"\btoday'?s\s+(?:video\s+)?sponsor(?:\s+is)?\s*[,:]?\s+" + _BLOB, re.I),
-    # "use code FOO at X"
-    re.compile(r"\buse\s+(?:code|coupon)\s+\S{2,20}\s+at\s+" + _BLOB, re.I),
+    # "use/with code FOO at X"
+    re.compile(r"\b(?:use|using|with)\s+(?:code|coupon|promo\s+code)\s+\S{2,20}\s+at\s+" + _BLOB, re.I),
     # "60% off X" — deal-style disclosures ("get 60% off an annual Incogni plan")
     re.compile(
         r"\d{1,3}%\s+(?:off|discount\s+on)\s+(?:your\s+|an?\s+|the\s+)?"
@@ -80,7 +80,7 @@ def _clean(blob):
     s = re.split(r"https?://|https?$|\bwww\.|►|▶|→|<|\s@\s", s)[0]
     s = re.split(r"\s+[-–—]\s+", s)[0]
     s = re.split(
-        r"\s+(?:for|who|which|where|because|get|use|save|grab|go|visit|click|try|sign|check|head|and)\s+",
+        r"\s+(?:for|who|which|where|because|get|use|using|save|grab|go|visit|click|try|sign|check|head|and|with)\s+",
         s,
     )[0]
     # drop possessive endings like "NordVPN's"
@@ -94,6 +94,9 @@ def _clean(blob):
         words = words[2:]
         while words and words[0].lower() in {"at", "over", "from"}:
             words = words[1:]
+    # trim leading connectives so "with code NUTTY" reduces to "code NUTTY"
+    while words and words[0].lower() in {"with", "using", "use", "via"}:
+        words = words[1:]
     # cap at 4 words, then trim trailing stopwords
     words = words[:4]
     while words and words[-1].lower() in _TRAILING_STOP:
@@ -106,6 +109,9 @@ def _clean(blob):
         return None
     # "use code X at (desktop) checkout / at the cart" — a place, not a brand
     if low.split()[-1] in ("checkout", "cart"):
+        return None
+    # "code NUTTY" / "coupon SAVE20" — a discount code, not a brand
+    if low.split()[0] in ("code", "coupon", "promo", "voucher"):
         return None
     if s.isdigit():
         return None

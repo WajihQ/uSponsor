@@ -15,6 +15,10 @@
 .chart .m { font-size:10.5px; color:var(--muted); white-space:nowrap; }
 .ev { color:var(--muted); font-size:12px; }
 .alias { font-size:12.5px; color:var(--ink-2); }
+.fix { display:flex; gap:4px; align-items:center; }
+.fix input { font:inherit; font-size:12px; width:110px; padding:3px 7px;
+  border:1px solid var(--ring); border-radius:6px; background:var(--page); color:var(--ink); }
+.fix button { padding:3px 8px; font-size:12px; }
 {% endblock %}
 
 {% block content %}
@@ -76,16 +80,31 @@
 
 <div class="card">
   <h2>Sponsored videos</h2>
-  <p class="sub">Latest 50, with the disclosure that was detected.</p>
+  <p class="sub">Latest 50, with the disclosure that was detected. Wrong or bundled brand? Type the
+     correct one in the Fix box to reassign just that video, or ✕ to drop the detection.</p>
   <div class="scroll">
     <table>
-      <tr><th>Date</th><th>Creator</th><th>Video</th><th>Disclosure found</th></tr>
+      <tr><th>Date</th><th>Creator</th><th>Video</th><th>Disclosure found</th><th>Fix</th><th></th></tr>
       {% for v in videos %}
       <tr>
         <td class="num" style="white-space:nowrap">{{ v.upload_date or '—' }}</td>
         <td>{{ v.creator }}</td>
         <td><a href="{{ v.url }}" target="_blank">{{ v.title }}</a></td>
         <td class="ev">…{{ v.evidence }}…</td>
+        <td>
+          <form method="post" action="{{ url_for('sponsorship_reassign', sid=v.sid) }}" class="fix"
+                data-ajax="remove-row" data-done="Reassigned">
+            <input type="text" name="brand" placeholder="Correct brand" required>
+            <button>Save</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('sponsorship_delete', sid=v.sid) }}"
+                data-ajax="remove-row" data-done="Detection removed"
+                data-confirm="Remove this detection from {{ v.creator }}'s video?">
+            <button class="fix" style="padding:3px 8px; font-size:12px" title="Not a sponsorship — remove this detection">✕</button>
+          </form>
+        </td>
       </tr>
       {% endfor %}
     </table>

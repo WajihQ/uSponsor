@@ -634,7 +634,7 @@ def brand_detail(key):
             (key,),
         ).fetchall()
         videos = conn.execute(
-            "SELECT v.title, v.url, v.upload_date, c.name AS creator, s.evidence"
+            "SELECT s.id AS sid, v.title, v.url, v.upload_date, c.name AS creator, s.evidence"
             " FROM sponsorships s JOIN videos v ON v.id = s.video_ref"
             " JOIN channels c ON c.id = v.channel_ref WHERE s.brand_key = ?"
             " ORDER BY v.upload_date DESC LIMIT 50",
@@ -651,6 +651,41 @@ def brand_detail(key):
         months=months, month_max=max((m["n"] for m in months), default=0),
         creators=creators, videos=videos, aliases=aliases, scan=scraper.STATE,
     )
+
+
+@app.route("/sponsorship/<int:sid>/reassign", methods=["POST"])
+def sponsorship_reassign(sid):
+    """Correct a single detection: point one video's sponsorship at the right
+    brand (used to split bundled/mangled detections video by video)."""
+    name = request.form.get("brand", "").strip()[:60]
+    key = brand_key(name)
+    if not name or len(key) < 2:
+        return _done("Brand name too short.", "err", endpoint="brands")
+    conn = db.connect()
+    try:
+        name, key = db.apply_alias(name, db.alias_map(conn))
+        # UPDATE OR IGNORE: if the video already has this brand recorded,
+        # the duplicate row is dropped instead
+        conn.execute(
+            "UPDATE OR IGNORE sponsorships SET brand = ?, brand_key = ? WHERE id = ?",
+            (name, key, sid),
+        )
+        conn.execute("DELETE FROM sponsorships WHERE id = ? AND brand_key != ?", (sid, key))
+        conn.commit()
+    finally:
+        conn.close()
+    return _done(f"Reassigned to {name}.", endpoint="brands")
+
+
+@app.route("/sponsorship/<int:sid>/delete", methods=["POST"])
+def sponsorship_delete(sid):
+    conn = db.connect()
+    try:
+        conn.execute("DELETE FROM sponsorships WHERE id = ?", (sid,))
+        conn.commit()
+    finally:
+        conn.close()
+    return _done("Detection removed.", endpoint="brands")
 
 
 @app.route("/aliases/<alias_key>/delete", methods=["POST"])
