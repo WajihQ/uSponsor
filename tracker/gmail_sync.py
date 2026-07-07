@@ -124,41 +124,48 @@ def _service(creds):
     return build("gmail", "v1", credentials=creds, cache_discovery=False)
 
 
+def _execute(request, tries=6):
+    """Run a Gmail API request, retrying transient errors with backoff.
+
+    Gmail intermittently returns 429/500/502/503 (e.g. "Authentication backend
+    unavailable") — without this a single blip would abort a whole sync.
+    """
+    from googleapiclient.errors import HttpError
+    delay = 1.0
+    for attempt in range(tries):
+        try:
+            return request.execute()
+        except HttpError as e:
+            status = getattr(e, "status_code", None) or getattr(getattr(e, "resp", None), "status", None)
+            if int(status or 0) in (429, 500, 502, 503) and attempt < tries - 1:
+                time.sleep(delay)
+                delay = min(delay * 2, 30)
+                continue
+            raise
+
+
 def _collect_sends(service, since_epoch, progress=None):
     """Read SENT metadata newest-first until older than since_epoch.
 
-    Returns (list of (email, epoch_ms), newest_epoch_seen). Uses batched
-    metadata.get so a full history is a handful of round-trips per 100 msgs.
+    Returns (list of (email, epoch_ms), newest_epoch_seen). Fetches messages
+    sequentially — slower than batching but reliable (batched metadata reads
+    trip Gmail's per-user rate limit). For a one-time full history that's a
+    minute or two; incremental syncs read only the new tail.
     """
     sends, newest, page, seen = [], since_epoch or 0, None, 0
     while True:
-        resp = service.users().messages().list(
+        resp = _execute(service.users().messages().list(
             userId="me", labelIds=["SENT"], pageToken=page, maxResults=100
-        ).execute()
+        ))
         msgs = resp.get("messages", [])
         if not msgs:
             break
-        metas = {}
-        batch = service.new_batch_http_request()
-
-        def _cb(rid, response, exc, _m=metas):
-            if exc is None:
-                _m[rid] = response
-
-        for m in msgs:
-            batch.add(
-                service.users().messages().get(
-                    userId="me", id=m["id"], format="metadata",
-                    metadataHeaders=["To", "Cc", "Bcc", "Date"],
-                ),
-                callback=_cb, request_id=m["id"],
-            )
-        batch.execute()
         stop = False
-        for m in msgs:  # original order is newest-first; honour the watermark
-            msg = metas.get(m["id"])
-            if not msg:
-                continue
+        for m in msgs:  # list is newest-first; honour the watermark
+            msg = _execute(service.users().messages().get(
+                userId="me", id=m["id"], format="metadata",
+                metadataHeaders=["To", "Cc", "Bcc"],
+            ))
             ts = int(msg.get("internalDate", 0))
             if since_epoch and ts <= since_epoch:
                 stop = True
@@ -169,12 +176,14 @@ def _collect_sends(service, since_epoch, progress=None):
             for field in ("to", "cc", "bcc"):
                 for addr in _extract_emails(headers.get(field, "")):
                     sends.append((addr, ts))
-        seen += len(msgs)
-        if progress:
-            progress(seen)
+            seen += 1
+            if progress and seen % 25 == 0:
+                progress(seen)
         if stop or "nextPageToken" not in resp:
             break
         page = resp["nextPageToken"]
+    if progress:
+        progress(seen)
     return sends, newest
 
 
@@ -233,6 +242,8 @@ def sync(authoritative=False):
         STATE["last_run"] = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
         return True, msg
     except Exception as e:  # network / auth / quota — surface, don't crash the app
+        import traceback
+        traceback.print_exc()  # show the real cause in the app's terminal
         STATE["message"] = f"Sync error: {e}"
         return False, str(e)
     finally:

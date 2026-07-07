@@ -15,7 +15,7 @@
           data-confirm="Full resync reads ALL sent mail across every connected account and overwrites the three contact fields with Gmail's values. Run this once after connecting. Continue?">
       <button class="gmail-go" {{ 'disabled' if gmail.state.running }}>Full resync</button>
     </form>
-    <span id="gmailStatus" class="sub" style="margin:0">{{ gmail.state.message if gmail.state.running }}</span>
+    <span id="gmailStatus" class="sub" style="margin:0">{{ gmail.state.message }}</span>
   </div>
   {% else %}
   <p class="sub">No accounts connected yet. In the project folder run <code>python connect_gmail.py</code> once per sending account (see <b>SETUP_GMAIL.md</b>), then reload this page.</p>
