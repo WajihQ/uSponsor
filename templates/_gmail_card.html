@@ -1,0 +1,47 @@
+<div class="card">
+  <h2>Gmail sync</h2>
+  <p class="sub">Reads your Sent mail (headers only) and stamps <b>initial</b> / <b>last contact</b> dates and follow-up counts onto leads whose email matches a recipient. Works across every connected account — including the mailboxes Instantly sends from.</p>
+  {% if gmail.accounts %}
+  <div class="pills" style="margin-bottom:12px">
+    {% for a in gmail.accounts %}
+    <span><b>{{ a.account }}</b> — {{ ('synced ' + a.last_run) if a.last_run else 'never synced' }}{% if a.last_result %} · {{ a.last_result }}{% endif %}</span>
+    {% endfor %}
+  </div>
+  <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+    <form method="post" action="{{ url_for('gmail_sync_now') }}" data-ajax="save" data-done="Gmail sync started">
+      <button class="primary gmail-go" {{ 'disabled' if gmail.state.running }}>Sync now</button>
+    </form>
+    <form method="post" action="{{ url_for('gmail_resync') }}" data-ajax="save" data-done="Full resync started"
+          data-confirm="Full resync reads ALL sent mail across every connected account and overwrites the three contact fields with Gmail's values. Run this once after connecting. Continue?">
+      <button class="gmail-go" {{ 'disabled' if gmail.state.running }}>Full resync</button>
+    </form>
+    <span id="gmailStatus" class="sub" style="margin:0">{{ gmail.state.message if gmail.state.running }}</span>
+  </div>
+  {% else %}
+  <p class="sub">No accounts connected yet. In the project folder run <code>python connect_gmail.py</code> once per sending account (see <b>SETUP_GMAIL.md</b>), then reload this page.</p>
+  {% endif %}
+</div>
+{% if gmail.accounts %}
+<script>
+(function () {
+  const el = document.getElementById('gmailStatus');
+  if (!el) return;
+  async function tick(prev) {
+    try {
+      const s = await (await fetch('{{ url_for("gmail_status") }}')).json();
+      if (s.state.running) {
+        el.textContent = (s.state.current ? s.state.current + ' — ' : '') + (s.state.message || 'working…');
+        setTimeout(() => tick(true), 2000);
+      } else if (prev) {
+        el.textContent = s.state.message || 'Done';
+        setTimeout(() => location.reload(), 900);
+      }
+    } catch (e) { /* app gone; stop */ }
+  }
+  document.querySelectorAll('.gmail-go').forEach(function (b) {
+    b.addEventListener('click', () => setTimeout(() => tick(true), 1200));
+  });
+  if ({{ 'true' if gmail.state.running else 'false' }}) tick(true);
+})();
+</script>
+{% endif %}

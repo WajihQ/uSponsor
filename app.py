@@ -9,7 +9,7 @@ import os
 from flask import Flask, abort, flash, jsonify, redirect, render_template, request, send_from_directory, url_for
 from werkzeug.utils import secure_filename
 
-from tracker import db, scraper
+from tracker import db, gmail_sync, scraper
 from tracker.detector import brand_key
 
 app = Flask(__name__)
@@ -363,6 +363,7 @@ def crm_influencers():
     return render_template(
         "crm_influencers.html", rows=rows, statuses=statuses, counts=counts,
         f_status=f_status, f_revisit=f_revisit, q=q, sort=sort, scan=scraper.STATE,
+        gmail=gmail_sync.status(),
     )
 
 
@@ -458,6 +459,7 @@ def crm_brands():
     return render_template(
         "crm_brands.html", rows=rows, statuses=statuses, niches=niches, counts=counts,
         f_status=f_status, f_niche=f_niche, q=q, sort=sort, scan=scraper.STATE,
+        gmail=gmail_sync.status(),
     )
 
 
@@ -523,6 +525,26 @@ def crm_brands_delete(bid):
     finally:
         conn.close()
     return _done("Brand lead removed.", endpoint="crm_brands")
+
+
+@app.route("/crm/gmail/sync", methods=["POST"])
+def gmail_sync_now():
+    started = gmail_sync.start_sync_in_background(authoritative=False)
+    return _done("Gmail sync started." if started else "A sync is already running.",
+                 "ok" if started else "err", endpoint="crm_influencers")
+
+
+@app.route("/crm/gmail/resync", methods=["POST"])
+def gmail_resync():
+    started = gmail_sync.start_sync_in_background(authoritative=True)
+    return _done("Full Gmail resync started — reads all sent mail." if started
+                 else "A sync is already running.",
+                 "ok" if started else "err", endpoint="crm_influencers")
+
+
+@app.route("/crm/gmail/status")
+def gmail_status():
+    return jsonify(gmail_sync.status())
 
 
 def _pageof(rows, arg, per=50):
@@ -1049,4 +1071,12 @@ def scan_status():
 
 
 if __name__ == "__main__":
+    # background heartbeat that folds new Sent mail into the CRM; set
+    # USPONSOR_GMAIL_INTERVAL=0 to disable, or a minute count to change cadence
+    try:
+        _mins = int(os.environ.get("USPONSOR_GMAIL_INTERVAL", "30"))
+    except ValueError:
+        _mins = 30
+    if _mins > 0:
+        gmail_sync.start_interval(_mins)
     app.run(debug=False, port=5000)

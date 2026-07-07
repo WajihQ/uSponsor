@@ -1,2 +1,6 @@
 flask>=3.0
 yt-dlp>=2024.10.22
+# optional — only needed for the Gmail CRM sync (Phase 2). See SETUP_GMAIL.md
+google-api-python-client>=2.0
+google-auth-oauthlib>=1.0
+google-auth-httplib2>=0.2

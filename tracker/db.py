@@ -101,6 +101,13 @@ CREATE TABLE IF NOT EXISTS brand_aliases (
     canonical TEXT NOT NULL                       -- display name it consolidates into
 );
 
+CREATE TABLE IF NOT EXISTS crm_sync (
+    account     TEXT PRIMARY KEY,                 -- connected gmail address
+    last_epoch  INTEGER,                          -- newest SENT internalDate (ms) processed
+    last_run    TEXT,                             -- datetime of last successful sync
+    last_result TEXT                              -- short human-readable summary
+);
+
 CREATE INDEX IF NOT EXISTS idx_videos_channel ON videos(channel_ref);
 CREATE INDEX IF NOT EXISTS idx_videos_date ON videos(upload_date);
 CREATE INDEX IF NOT EXISTS idx_spons_brand ON sponsorships(brand_key);

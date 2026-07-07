@@ -9,5 +9,8 @@ uploads/
 cleanup_backup_*.csv
 brand_cleanup_proposal.csv
 needs_review.csv
+# Gmail OAuth secrets — never commit these
+client_secret*.json
+gmail_tokens/
 .venv/
 venv/
