@@ -65,6 +65,17 @@ td { padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top; 
   transition:opacity .18s, transform .18s; pointer-events:none; max-width:340px; }
 #toast.show { opacity:1; transform:none; }
 .fading { transition:opacity .25s; opacity:0; }
+/* spreadsheet-style CRM tables: sortable headers + per-column filters */
+th.sortable { cursor:pointer; user-select:none; }
+th.sortable:hover { color:var(--ink); }
+th .arrow { color:var(--accent); font-size:11px; margin-left:2px; }
+tr.filterrow td { padding:4px 8px 7px; border-bottom:1px solid var(--axis);
+  position:sticky; background:var(--surface); }
+.colfilter { width:100%; min-width:64px; font:inherit; font-size:12px; padding:4px 6px;
+  border:1px solid var(--ring); border-radius:6px; background:var(--page); color:var(--ink); }
+tbody.addrow td { background:var(--chip-bg); border-bottom:2px solid var(--axis); }
+tbody.addrow input, tbody.addrow select { width:100%; font:inherit; padding:5px 7px;
+  border:1px solid var(--ring); border-radius:6px; background:var(--surface); color:var(--ink); }
 {% block style %}{% endblock %}
 </style>
 </head>
@@ -75,6 +86,8 @@ td { padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top; 
     <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">Dashboard</a>
     <a href="{{ url_for('brands') }}" class="{{ 'active' if request.endpoint == 'brands' }}">Brands</a>
     <a href="{{ url_for('channels') }}" class="{{ 'active' if request.endpoint == 'channels' }}">Channels</a>
+    <a href="{{ url_for('crm_influencers') }}" class="{{ 'active' if request.endpoint == 'crm_influencers' }}">Influencer CRM</a>
+    <a href="{{ url_for('crm_brands') }}" class="{{ 'active' if request.endpoint == 'crm_brands' }}">Brand CRM</a>
   </nav>
   <span class="spacer"></span>
   <span id="scanStatus">{% if scan.running %}<span class="dot"></span>{{ 'Backfilling' if scan.mode == 'backfill' else 'Scanning' }} {{ scan.current }} ({{ scan.done }}/{{ scan.total }})…{% endif %}</span>
@@ -169,6 +182,80 @@ td { padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top; 
   if (wasRunning) setTimeout(() => tick(true), 2000);
   else tick(false);
 })();
+// Spreadsheet behaviour for any table[data-sheet]: click a header to sort
+// (toggles asc/desc, empties last), a filter box under each header, and an
+// optional global search box referenced by the table's data-search id.
+document.querySelectorAll('table[data-sheet]').forEach(function (table) {
+  const thead = table.tHead, heads = Array.from(thead.rows[0].cells);
+  const body = table.querySelector('tbody.data');
+  if (!body) return;
+  const rows = () => Array.from(body.rows);
+  const cellVal = (row, i) => {
+    const c = row.cells[i]; if (!c) return '';
+    const f = c.querySelector('input, select, textarea');
+    return ((f ? f.value : c.textContent) || '').trim();
+  };
+  const filters = [];
+  let globalTerm = '';
+  const fRow = thead.insertRow();
+  fRow.className = 'filterrow';
+  heads.forEach(function (th, i) {
+    const cell = fRow.insertCell();
+    if (th.dataset.filter === 'none') return;
+    let ctrl;
+    if (th.dataset.filter === 'select') {
+      ctrl = document.createElement('select');
+      const vals = Array.from(new Set(rows().map(r => cellVal(r, i)).filter(Boolean)))
+        .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+      const o = document.createElement('option'); o.value = ''; o.textContent = 'All';
+      ctrl.appendChild(o);
+      vals.forEach(v => { const op = document.createElement('option'); op.textContent = v; ctrl.appendChild(op); });
+    } else {
+      ctrl = document.createElement('input'); ctrl.placeholder = 'filter';
+    }
+    ctrl.className = 'colfilter'; ctrl.dataset.col = i; ctrl.dataset.exact = (th.dataset.filter === 'select') ? '1' : '';
+    ctrl.addEventListener('input', apply);
+    cell.appendChild(ctrl); filters.push(ctrl);
+  });
+  function apply() {
+    const active = filters.map(f => ({ i: +f.dataset.col, v: f.value.trim().toLowerCase(), exact: !!f.dataset.exact }));
+    rows().forEach(function (r) {
+      let show = active.every(a => !a.v || (a.exact ? cellVal(r, a.i).toLowerCase() === a.v
+                                                    : cellVal(r, a.i).toLowerCase().includes(a.v)));
+      if (show && globalTerm) {
+        show = Array.from(r.cells).some(c => (c.querySelector('input,select,textarea')
+          ? c.querySelector('input,select,textarea').value : c.textContent || '').toLowerCase().includes(globalTerm));
+      }
+      r.style.display = show ? '' : 'none';
+    });
+  }
+  const gs = table.dataset.search && document.getElementById(table.dataset.search);
+  if (gs) gs.addEventListener('input', () => { globalTerm = gs.value.trim().toLowerCase(); apply(); });
+  let sortCol = -1, dir = 1;
+  const isDate = s => /^\d{4}-\d{2}-\d{2}/.test(s);
+  const isNum = s => /^[\d., ]+$/.test(s) && !isNaN(parseFloat(s.replace(/[, ]/g, '')));
+  heads.forEach(function (th, i) {
+    if (th.dataset.sort === 'none') return;
+    th.classList.add('sortable');
+    const arrow = document.createElement('span'); arrow.className = 'arrow'; th.appendChild(arrow);
+    th.addEventListener('click', function () {
+      dir = (sortCol === i) ? -dir : 1; sortCol = i;
+      heads.forEach(h => { const a = h.querySelector('.arrow'); if (a) a.textContent = ''; });
+      arrow.textContent = dir > 0 ? '▲' : '▼';
+      const rs = rows();
+      rs.sort(function (a, b) {
+        const x = cellVal(a, i), y = cellVal(b, i);
+        if (!x && !y) return 0; if (!x) return 1; if (!y) return -1;
+        let c;
+        if (isDate(x) && isDate(y)) c = x.localeCompare(y);
+        else if (isNum(x) && isNum(y)) c = parseFloat(x.replace(/[, ]/g, '')) - parseFloat(y.replace(/[, ]/g, ''));
+        else c = x.toLowerCase().localeCompare(y.toLowerCase());
+        return c * dir;
+      });
+      rs.forEach(r => body.appendChild(r));
+    });
+  });
+});
 </script>
 </body>
 </html>

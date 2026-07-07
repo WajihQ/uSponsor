@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Influencer CRM — uSponsor{% endblock %}
+{% block style %}
+.pills { display:flex; gap:16px; margin:2px 0 0; color:var(--ink-2); font-size:13px; align-items:center; flex-wrap:wrap; }
+.pills b { color:var(--ink); }
+.pills .spacer { flex:1; }
+.gsearch { font:inherit; padding:7px 10px; border:1px solid var(--ring); border-radius:8px;
+  background:var(--surface); color:var(--ink); min-width:220px; }
+.ed { font:inherit; width:100%; min-width:130px; border:1px solid transparent; border-radius:6px;
+  padding:6px 8px; background:transparent; color:var(--ink); }
+.ed:hover { border-color:var(--grid); }
+.ed:focus { border-color:var(--accent); background:var(--surface); outline:none; }
+select.ed { min-width:120px; }
+.ed.dt { min-width:110px; font-variant-numeric:tabular-nums; }
+textarea.ed { min-width:220px; resize:vertical; line-height:1.35; white-space:pre-wrap; }
+td .meta { color:var(--muted); font-size:12px; margin-top:3px; }
+td.who { min-width:200px; }
+.fu { text-align:center; font-variant-numeric:tabular-nums; color:var(--ink-2); }
+tbody.addrow .who input { display:block; margin-bottom:5px; }
+{% endblock %}
+
+{% block content %}
+{% set infl_status_opts = ['wait','soft rejection','hard rejection','ghosted after reply','i ghosted them','closed'] %}
+{% set all_status = infl_status_opts + (statuses | reject('in', infl_status_opts) | list) %}
+
+<div class="card">
+  <h2>Influencer CRM</h2>
+  <p class="sub">Your outreach list, living on top of the channels you scan. Edit any field inline (saves as you type), click a column heading to sort, and use the filter boxes under each heading — just like a spreadsheet.</p>
+  <div class="pills">
+    <span><b>{{ counts.total }}</b> influencers</span>
+    <span><b>{{ counts.emailed }}</b> contacted</span>
+    <span><b>{{ counts.no_email }}</b> missing an email</span>
+    <span class="spacer"></span>
+    <input class="gsearch" id="inflSearch" type="text" placeholder="Search all columns…">
+  </div>
+</div>
+
+<div class="card scroll">
+  <table data-sheet data-search="inflSearch">
+    <thead>
+      <tr>
+        <th data-filter="text">Influencer</th>
+        <th data-filter="text">Email</th>
+        <th data-filter="text">Instagram</th>
+        <th data-filter="select">Status</th>
+        <th data-filter="select">Revisit</th>
+        <th data-filter="text">Initial email</th>
+        <th data-filter="text">Last contact</th>
+        <th data-filter="none">Follow-ups</th>
+        <th data-filter="text">Notes</th>
+      </tr>
+    </thead>
+    <tbody class="addrow">
+      <tr>
+        <td class="who">
+          <form id="addinfl" action="{{ url_for('crm_influencers_add') }}" method="post"></form>
+          <input form="addinfl" name="link" placeholder="channel URL or @handle *" required>
+          <input form="addinfl" name="name" placeholder="name (optional)">
+        </td>
+        <td><input form="addinfl" name="email" placeholder="email" type="email"></td>
+        <td><input form="addinfl" name="instagram" placeholder="@ig"></td>
+        <td>
+          <select form="addinfl" name="crm_status">
+            <option value="">status…</option>
+            {% for s in all_status %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+          </select>
+        </td>
+        <td>
+          <select form="addinfl" name="revisit_later">
+            <option value="">revisit…</option>
+            {% for r in ['yes','maybe','no'] %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+          </select>
+        </td>
+        <td><input form="addinfl" name="first_contacted" placeholder="YYYY-MM-DD"></td>
+        <td><input form="addinfl" name="last_contacted" placeholder="YYYY-MM-DD"></td>
+        <td><button form="addinfl" class="primary">Add</button></td>
+        <td><input form="addinfl" name="notes" placeholder="notes"></td>
+      </tr>
+    </tbody>
+    <tbody class="data">
+      {% for c in rows %}
+      <tr>
+        <td class="who">
+          <form id="if{{ c.id }}" action="{{ url_for('crm_influencers_edit', cid=c.id) }}" method="post" data-ajax="save" data-done="Saved"></form>
+          <a href="{{ url_for('creator_detail', cid=c.id) }}"><b>{{ c.name or c.input_url }}</b></a>
+          <div class="meta">
+            {{ c.niche or '—' }}{% if c.subniche %} / {{ c.subniche }}{% endif %}
+            {% if c.subscribers %} · {{ '{:,}'.format(c.subscribers) }} subs{% endif %}
+            {% if c.spons %} · {{ c.spons }} sponsors{% endif %}
+            {% if c.status == 'closed' %} · <span style="color:var(--good)">✓ signed</span>{% endif %}
+          </div>
+        </td>
+        <td><input form="if{{ c.id }}" class="ed" name="email" value="{{ c.email or '' }}" placeholder="—" type="email"></td>
+        <td><input form="if{{ c.id }}" class="ed" name="instagram" value="{{ c.instagram or '' }}" placeholder="—"></td>
+        <td>
+          <select form="if{{ c.id }}" class="ed" name="crm_status">
+            <option value=""></option>
+            {% for s in all_status %}<option value="{{ s }}" {{ 'selected' if c.crm_status==s }}>{{ s }}</option>{% endfor %}
+          </select>
+        </td>
+        <td>
+          <select form="if{{ c.id }}" class="ed" name="revisit_later">
+            <option value=""></option>
+            {% for r in ['yes','maybe','no'] %}<option value="{{ r }}" {{ 'selected' if c.revisit_later==r }}>{{ r }}</option>{% endfor %}
+          </select>
+        </td>
+        <td><input form="if{{ c.id }}" class="ed dt" name="first_contacted" value="{{ c.first_contacted or '' }}" placeholder="—"></td>
+        <td><input form="if{{ c.id }}" class="ed dt" name="last_contacted" value="{{ c.last_contacted or '' }}" placeholder="—"></td>
+        <td class="fu">{{ c.followup_count or 0 }}</td>
+        <td><textarea form="if{{ c.id }}" class="ed" name="notes" rows="1" placeholder="—">{{ c.notes or '' }}</textarea></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" style="color:var(--muted)">No influencers yet. Add one in the row above, or import your sheet below.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Import from your Google Sheet</h2>
+  <p class="sub">Export the influencer sheet as CSV (File → Download → CSV) and upload it here. Rows are matched to channels you already scan by their link, so nothing gets duplicated; only blank fields are filled in. Safe to re-run.</p>
+  <form method="post" action="{{ url_for('crm_influencers_import') }}" enctype="multipart/form-data" style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+    <input type="file" name="file" accept=".csv,.txt" required>
+    <button class="primary">Import CSV</button>
+  </form>
+</div>
+
+<script>
+document.querySelectorAll('.ed').forEach(function (el) {
+  el.addEventListener('change', () => el.form.requestSubmit());
+  if (el.tagName === 'TEXTAREA') {  // auto-grow notes to fit their text
+    const grow = () => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; };
+    el.addEventListener('input', grow); grow();
+  }
+});
+</script>
+{% endblock %}

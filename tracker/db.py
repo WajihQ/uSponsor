@@ -1,5 +1,8 @@
 """SQLite storage for channels, videos and detected sponsorships."""
+import csv
+import io
 import os
+import re
 import sqlite3
 
 DB_PATH = os.environ.get(
@@ -25,7 +28,17 @@ CREATE TABLE IF NOT EXISTS channels (
     demo_gender TEXT,
     demo_geo    TEXT,
     demo_age    TEXT,
-    notes       TEXT
+    notes       TEXT,
+    -- influencer outreach CRM (mirrors the owner's Google Sheet); kept separate
+    -- from `status` above, which drives scanner targeting and the ✓ badge
+    email       TEXT,
+    instagram   TEXT,
+    revisit_later TEXT,                           -- 'yes' | 'no' | 'maybe'
+    date_found  TEXT,
+    crm_status  TEXT,                             -- outreach lifecycle (wait/soft rejection/...)
+    first_contacted TEXT,                         -- date of initial email
+    last_contacted  TEXT,                         -- newest follow-up / send (Gmail keeps fresh)
+    followup_count  INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS brands (
@@ -34,6 +47,25 @@ CREATE TABLE IF NOT EXISTS brands (
     brand_key TEXT UNIQUE NOT NULL,               -- same normalization as sponsorships
     kind      TEXT NOT NULL DEFAULT 'known',      -- 'known' | 'erroneous'
     added_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS brand_leads (
+    id          INTEGER PRIMARY KEY,
+    person      TEXT,
+    brand       TEXT,
+    niche       TEXT,
+    linkedin    TEXT,
+    role        TEXT,
+    email       TEXT,
+    country     TEXT,
+    location    TEXT,
+    comments    TEXT,
+    status      TEXT,                             -- outreach lifecycle (in talks / hard rejection / ...)
+    influencers TEXT,                             -- which influencers this brand works with
+    first_contacted TEXT,                         -- date of initial email
+    last_contacted  TEXT,                         -- most recent send (Gmail keeps fresh)
+    followup_count  INTEGER NOT NULL DEFAULT 0,
+    added_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS videos (
@@ -102,6 +134,11 @@ def init_db():
             conn.execute("ALTER TABLE channels ADD COLUMN subscribers INTEGER")
             for c in ("rate_integration", "rate_dedicated", "demo_gender", "demo_geo", "demo_age", "notes"):
                 conn.execute(f"ALTER TABLE channels ADD COLUMN {c} TEXT")
+        if "email" not in cols:  # influencer outreach CRM columns
+            for c in ("email", "instagram", "revisit_later", "date_found",
+                      "crm_status", "first_contacted", "last_contacted"):
+                conn.execute(f"ALTER TABLE channels ADD COLUMN {c} TEXT")
+            conn.execute("ALTER TABLE channels ADD COLUMN followup_count INTEGER NOT NULL DEFAULT 0")
         vcols = {r["name"] for r in conn.execute("PRAGMA table_info(videos)")}
         if "description" not in vcols:
             conn.execute("ALTER TABLE videos ADD COLUMN description TEXT")
@@ -273,6 +310,276 @@ def apply_alias(brand, amap):
         canonical = amap[key]
         return canonical, brand_key(canonical)
     return brand, key
+
+
+def consolidate_brand(conn, old_key, new_name):
+    """Merge a brand's rows onto a canonical name (same effect as the Brands-tab
+    rename): move sponsorship rows to the new key, drop duplicates, update the
+    brands row, and remember the alias so future scans map the variant straight
+    to the canonical name. Caller commits. No-op if the key is unchanged.
+    """
+    from .detector import brand_key
+    new_key = brand_key(new_name)
+    if len(new_key) < 2 or new_key == old_key:
+        return False
+    conn.execute(
+        "UPDATE OR IGNORE sponsorships SET brand = ?, brand_key = ? WHERE brand_key = ?",
+        (new_name, new_key, old_key),
+    )
+    conn.execute("DELETE FROM sponsorships WHERE brand_key = ?", (old_key,))
+    conn.execute("UPDATE sponsorships SET brand = ? WHERE brand_key = ?", (new_name, new_key))
+    conn.execute(
+        "UPDATE OR IGNORE brands SET name = ?, brand_key = ? WHERE brand_key = ?",
+        (new_name, new_key, old_key),
+    )
+    conn.execute("DELETE FROM brands WHERE brand_key = ?", (old_key,))
+    conn.execute(
+        "INSERT INTO brand_aliases (alias_key, canonical) VALUES (?, ?)"
+        " ON CONFLICT(alias_key) DO UPDATE SET canonical = excluded.canonical",
+        (old_key, new_name),
+    )
+    for r in conn.execute("SELECT alias_key, canonical FROM brand_aliases").fetchall():
+        if r["alias_key"] != old_key and brand_key(r["canonical"]) == old_key:
+            conn.execute(
+                "UPDATE brand_aliases SET canonical = ? WHERE alias_key = ?",
+                (new_name, r["alias_key"]),
+            )
+    return True
+
+
+# ---------------------------------------------------------------------------
+# CRM CSV import (one-time seed from the owner's Google Sheets)
+# ---------------------------------------------------------------------------
+
+def _hkey(s):
+    """Normalize a CSV header cell for fuzzy matching (lowercase alnum)."""
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+def _parse_date(s):
+    """Best-effort date -> 'YYYY-MM-DD', else None. Handles the common
+    spreadsheet formats (ISO, US M/D/Y, D/M/Y is ambiguous so US wins)."""
+    s = (s or "").strip()
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y", "%d-%b-%Y", "%d %b %Y",
+                "%B %d, %Y", "%b %d, %Y", "%Y/%m/%d"):
+        try:
+            from datetime import datetime
+            return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return s[:10] if re.match(r"\d{4}-\d{2}-\d{2}", s) else None
+
+
+def _parse_subs(s):
+    """'1.2M' / '500K' / '12,300' -> int, else None."""
+    s = (s or "").strip().replace(",", "")
+    m = re.match(r"([\d.]+)\s*([kmb]?)", s.lower())
+    if not m:
+        return None
+    try:
+        n = float(m.group(1))
+    except ValueError:
+        return None
+    return int(n * {"k": 1e3, "m": 1e6, "b": 1e9}.get(m.group(2), 1))
+
+
+def _read_csv(text):
+    """Yield header-keyed row dicts (keys normalized via _hkey)."""
+    reader = csv.reader(io.StringIO(text))
+    rows = list(reader)
+    if not rows:
+        return [], []
+    header = [_hkey(c) for c in rows[0]]
+    out = []
+    for r in rows[1:]:
+        if not any(c.strip() for c in r):
+            continue
+        out.append({header[i]: (r[i].strip() if i < len(r) else "")
+                    for i in range(len(header))})
+    return header, out
+
+
+# header alias -> our field, for the two sheets
+_INFL_MAP = {
+    "name": "name", "link": "link", "channel": "link", "url": "link",
+    "niche": "niche", "subniche": "subniche",
+    "subscribercount": "subscribers", "subscribers": "subscribers", "subs": "subscribers",
+    "email": "email", "instagram": "instagram", "ig": "instagram",
+    "additionalinformations": "notes", "additionalinformation": "notes",
+    "notes": "notes", "additionalinfo": "notes",
+    "revisitlater": "revisit_later",
+    "datefound": "date_found",
+    "status": "crm_status",
+    "dateofinitialemail": "first_contacted", "initialemail": "first_contacted",
+    "followup1date": "fu1", "followup2date": "fu2",
+    "followup3date": "fu3", "followup4date": "fu4",
+}
+
+_BRAND_MAP = {
+    "person": "person", "contact": "person", "name": "person",
+    "brand": "brand", "company": "brand",
+    "niche": "niche",
+    "linkedinprofile": "linkedin", "linkedin": "linkedin",
+    "role": "role", "title": "role",
+    "emailcontact": "email", "email": "email",
+    "country": "country", "location": "location",
+    "comments": "comments", "notes": "comments",
+    "dateofinitialemail": "first_contacted", "initialemail": "first_contacted",
+    "status": "status",
+    "influencers": "influencers", "influencer": "influencers",
+}
+
+
+def _map_row(row, mapping):
+    """Apply a header-alias map to a normalized row dict -> {field: value}."""
+    out = {}
+    for hkey, val in row.items():
+        field = mapping.get(hkey)
+        if field and val:
+            out[field] = val
+    return out
+
+
+def import_influencer_csv(text):
+    """Seed the influencer CRM (the channels table) from a sheet CSV export.
+
+    Rows are matched to existing channels by normalized Link URL (so the roster
+    you already scan is enriched, not duplicated); unmatched rows with a valid
+    link create a new 'prospect' channel. Blank-fill only: a value already set
+    on a channel is never overwritten. Returns (added, updated, skipped).
+    """
+    added = updated = skipped = 0
+    _, rows = _read_csv(text)
+    crm_cols = ("name", "niche", "subniche", "subscribers", "notes", "email",
+                "instagram", "revisit_later", "date_found", "crm_status",
+                "first_contacted", "last_contacted", "followup_count")
+    with connect() as conn:
+        for row in rows:
+            f = _map_row(row, _INFL_MAP)
+            url = normalize_channel_url(f.get("link", ""))
+            if not url:
+                skipped += 1
+                continue
+            # derive contact tracking from initial + follow-up date columns
+            fus = [_parse_date(f.get(k)) for k in ("fu1", "fu2", "fu3", "fu4")]
+            fus = [d for d in fus if d]
+            first = _parse_date(f.get("first_contacted"))
+            dates = ([first] if first else []) + fus
+            vals = {
+                "name": f.get("name"),
+                "niche": (f.get("niche") or "")[:40] or None,
+                "subniche": (f.get("subniche") or "")[:40] or None,
+                "subscribers": _parse_subs(f.get("subscribers")),
+                "notes": f.get("notes"),
+                "email": f.get("email"),
+                "instagram": f.get("instagram"),
+                "revisit_later": (f.get("revisit_later") or "").lower()[:10] or None,
+                "date_found": _parse_date(f.get("date_found")),
+                "crm_status": f.get("crm_status"),
+                "first_contacted": first,
+                "last_contacted": max(dates) if dates else None,
+                "followup_count": len(fus),
+            }
+            existing = conn.execute(
+                "SELECT * FROM channels WHERE input_url = ?", (url,)
+            ).fetchone()
+            if existing:
+                sets, args = [], []
+                for col in crm_cols:
+                    new = vals.get(col)
+                    if new in (None, "", 0):
+                        continue
+                    cur = existing[col]
+                    if cur in (None, "", 0):  # blank-fill only
+                        sets.append(f"{col} = ?")
+                        args.append(new)
+                # a sheet Status of 'closed' also flips the business relationship
+                if (vals.get("crm_status") or "").lower() == "closed" and existing["status"] != "closed":
+                    sets.append("status = ?")
+                    args.append("closed")
+                if sets:
+                    conn.execute(
+                        f"UPDATE channels SET {', '.join(sets)} WHERE id = ?",
+                        (*args, existing["id"]),
+                    )
+                    updated += 1
+                else:
+                    skipped += 1
+            else:
+                cols = ["input_url"] + [c for c in crm_cols if vals.get(c) not in (None, "", 0)]
+                if (vals.get("crm_status") or "").lower() == "closed":
+                    cols.append("status")
+                    vals["status"] = "closed"
+                placeholders = ", ".join("?" for _ in cols)
+                args = [url] + [vals[c] for c in cols[1:]]
+                conn.execute(
+                    f"INSERT INTO channels ({', '.join(cols)}) VALUES ({placeholders})",
+                    args,
+                )
+                added += 1
+    return added, updated, skipped
+
+
+def import_brand_leads_csv(text):
+    """Seed the brand CRM (brand_leads) from a sheet CSV export.
+
+    Deduped by email, falling back to (person, brand). Blank-fill only on an
+    existing lead. Returns (added, updated, skipped).
+    """
+    added = updated = skipped = 0
+    cols = ("person", "brand", "niche", "linkedin", "role", "email", "country",
+            "location", "comments", "status", "influencers", "first_contacted",
+            "last_contacted", "followup_count")
+    with connect() as conn:
+        for row in _read_csv(text)[1]:
+            f = _map_row(row, _BRAND_MAP)
+            if not any(f.get(k) for k in ("email", "person", "brand")):
+                skipped += 1
+                continue
+            first = _parse_date(f.get("first_contacted"))
+            vals = {c: f.get(c) for c in cols}
+            vals["first_contacted"] = first
+            vals["last_contacted"] = first
+            vals["followup_count"] = 0
+            email = (f.get("email") or "").strip().lower()
+            existing = None
+            if email:
+                existing = conn.execute(
+                    "SELECT * FROM brand_leads WHERE lower(email) = ?", (email,)
+                ).fetchone()
+            if not existing and f.get("person") and f.get("brand"):
+                existing = conn.execute(
+                    "SELECT * FROM brand_leads WHERE person = ? AND brand = ?",
+                    (f["person"], f["brand"]),
+                ).fetchone()
+            if existing:
+                sets, args = [], []
+                for col in cols:
+                    new = vals.get(col)
+                    if new in (None, "", 0):
+                        continue
+                    if existing[col] in (None, "", 0):
+                        sets.append(f"{col} = ?")
+                        args.append(new)
+                if sets:
+                    conn.execute(
+                        f"UPDATE brand_leads SET {', '.join(sets)} WHERE id = ?",
+                        (*args, existing["id"]),
+                    )
+                    updated += 1
+                else:
+                    skipped += 1
+            else:
+                use = [c for c in cols if vals.get(c) not in (None, "", 0)]
+                placeholders = ", ".join("?" for _ in use)
+                conn.execute(
+                    f"INSERT INTO brand_leads ({', '.join(use)}) VALUES ({placeholders})",
+                    [vals[c] for c in use],
+                )
+                added += 1
+    return added, updated, skipped
 
 
 def known_brand_names(conn):

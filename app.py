@@ -300,6 +300,231 @@ def channels_niche(cid):
     return _done("Creator details updated.", endpoint="channels")
 
 
+# ---------------------------------------------------------------------------
+# CRM — influencer outreach (over the channels table) and brand leads
+# ---------------------------------------------------------------------------
+
+# fields the inline row editor may write, per CRM
+_INFL_EDIT = {"name", "email", "instagram", "revisit_later", "date_found",
+              "crm_status", "first_contacted", "last_contacted", "niche",
+              "subniche", "notes"}
+_BRAND_EDIT = {"person", "brand", "niche", "linkedin", "role", "email", "country",
+               "location", "comments", "status", "influencers", "first_contacted",
+               "last_contacted"}
+_INFL_SORTS = {
+    "stale": "last_contacted IS NULL, last_contacted ASC",   # follow-ups first
+    "recent": "last_contacted IS NULL, last_contacted DESC",
+    "name": "COALESCE(name, input_url) COLLATE NOCASE",
+    "found": "date_found DESC",
+}
+_BRAND_SORTS = {
+    "stale": "last_contacted IS NULL, last_contacted ASC",
+    "recent": "last_contacted IS NULL, last_contacted DESC",
+    "brand": "brand COLLATE NOCASE",
+    "person": "person COLLATE NOCASE",
+}
+
+
+@app.route("/crm/influencers")
+def crm_influencers():
+    f_status = request.args.get("status", "")
+    f_revisit = request.args.get("revisit", "")
+    q = request.args.get("q", "").strip()
+    sort = request.args.get("sort", "stale")
+    if sort not in _INFL_SORTS:
+        sort = "stale"
+    conds, args = [], []
+    if f_status:
+        conds.append("COALESCE(crm_status, '') = ?"); args.append(f_status)
+    if f_revisit:
+        conds.append("COALESCE(revisit_later, '') = ?"); args.append(f_revisit)
+    if q:
+        conds.append("(name LIKE ? OR input_url LIKE ? OR email LIKE ? OR notes LIKE ?)")
+        args += [f"%{q}%"] * 4
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
+    conn = db.connect()
+    try:
+        rows = conn.execute(
+            "SELECT c.*, (SELECT COUNT(*) FROM sponsorships s JOIN videos v"
+            "  ON v.id = s.video_ref WHERE v.channel_ref = c.id) AS spons"
+            " FROM channels c" + where + " ORDER BY " + _INFL_SORTS[sort],
+            args,
+        ).fetchall()
+        statuses = [r[0] for r in conn.execute(
+            "SELECT DISTINCT crm_status FROM channels WHERE crm_status IS NOT NULL"
+            " AND crm_status != '' ORDER BY crm_status")]
+        counts = {
+            "total": len(rows),
+            "emailed": sum(1 for r in rows if r["first_contacted"]),
+            "no_email": sum(1 for r in rows if not r["email"]),
+        }
+    finally:
+        conn.close()
+    return render_template(
+        "crm_influencers.html", rows=rows, statuses=statuses, counts=counts,
+        f_status=f_status, f_revisit=f_revisit, q=q, sort=sort, scan=scraper.STATE,
+    )
+
+
+@app.route("/crm/influencers/import", methods=["POST"])
+def crm_influencers_import():
+    f = request.files.get("file")
+    if not f or not f.filename:
+        flash("No file selected.", "err")
+        return redirect(url_for("crm_influencers"))
+    added, updated, skipped = db.import_influencer_csv(f.read().decode("utf-8", errors="replace"))
+    flash(f"Imported {added} new influencer(s), enriched {updated} existing,"
+          f" skipped {skipped} (no link / nothing new).", "ok")
+    return redirect(url_for("crm_influencers"))
+
+
+@app.route("/crm/influencers/add", methods=["POST"])
+def crm_influencers_add():
+    link = request.form.get("link", "").strip()
+    norm = db.normalize_channel_url(link)
+    if not norm:
+        flash("Enter a valid YouTube channel URL or @handle to add an influencer.", "err")
+        return redirect(url_for("crm_influencers"))
+    db.add_channel(link)  # inserts if new, dedups on the normalized URL
+    conn = db.connect()
+    try:
+        cid = conn.execute("SELECT id FROM channels WHERE input_url = ?", (norm,)).fetchone()["id"]
+        sets, args = [], []
+        for col in _INFL_EDIT:  # everything except the link itself
+            if request.form.get(col, "").strip():
+                sets.append(f"{col} = ?"); args.append(request.form.get(col).strip()[:400])
+        if sets:
+            conn.execute(f"UPDATE channels SET {', '.join(sets)} WHERE id = ?", (*args, cid))
+        conn.commit()
+    finally:
+        conn.close()
+    flash("Influencer added.", "ok")
+    return redirect(url_for("crm_influencers"))
+
+
+@app.route("/crm/influencers/<int:cid>/edit", methods=["POST"])
+def crm_influencers_edit(cid):
+    sets, args = [], []
+    for col in _INFL_EDIT:
+        if col in request.form:
+            val = request.form.get(col, "").strip()[:400] or None
+            sets.append(f"{col} = ?"); args.append(val)
+    if not sets:
+        return _done("Nothing to save.", endpoint="crm_influencers")
+    conn = db.connect()
+    try:
+        conn.execute(f"UPDATE channels SET {', '.join(sets)} WHERE id = ?", (*args, cid))
+        conn.commit()
+    finally:
+        conn.close()
+    return _done("Saved.", endpoint="crm_influencers")
+
+
+@app.route("/crm/brands")
+def crm_brands():
+    f_status = request.args.get("status", "")
+    f_niche = request.args.get("niche", "")
+    q = request.args.get("q", "").strip()
+    sort = request.args.get("sort", "stale")
+    if sort not in _BRAND_SORTS:
+        sort = "stale"
+    conds, args = [], []
+    if f_status:
+        conds.append("COALESCE(status, '') = ?"); args.append(f_status)
+    if f_niche:
+        conds.append("COALESCE(niche, '') = ?"); args.append(f_niche)
+    if q:
+        conds.append("(person LIKE ? OR brand LIKE ? OR email LIKE ? OR comments LIKE ?)")
+        args += [f"%{q}%"] * 4
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
+    conn = db.connect()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM brand_leads" + where + " ORDER BY " + _BRAND_SORTS[sort], args
+        ).fetchall()
+        statuses = [r[0] for r in conn.execute(
+            "SELECT DISTINCT status FROM brand_leads WHERE status IS NOT NULL"
+            " AND status != '' ORDER BY status")]
+        niches = [r[0] for r in conn.execute(
+            "SELECT DISTINCT niche FROM brand_leads WHERE niche IS NOT NULL"
+            " AND niche != '' ORDER BY niche")]
+        counts = {
+            "total": len(rows),
+            "emailed": sum(1 for r in rows if r["first_contacted"]),
+            "no_email": sum(1 for r in rows if not r["email"]),
+        }
+    finally:
+        conn.close()
+    return render_template(
+        "crm_brands.html", rows=rows, statuses=statuses, niches=niches, counts=counts,
+        f_status=f_status, f_niche=f_niche, q=q, sort=sort, scan=scraper.STATE,
+    )
+
+
+@app.route("/crm/brands/import", methods=["POST"])
+def crm_brands_import():
+    f = request.files.get("file")
+    if not f or not f.filename:
+        flash("No file selected.", "err")
+        return redirect(url_for("crm_brands"))
+    added, updated, skipped = db.import_brand_leads_csv(f.read().decode("utf-8", errors="replace"))
+    flash(f"Imported {added} new brand lead(s), enriched {updated} existing,"
+          f" skipped {skipped} (blank / nothing new).", "ok")
+    return redirect(url_for("crm_brands"))
+
+
+@app.route("/crm/brands/add", methods=["POST"])
+def crm_brands_add():
+    if not (request.form.get("person", "").strip() or request.form.get("brand", "").strip()):
+        flash("Give at least a person or brand.", "err")
+        return redirect(url_for("crm_brands"))
+    cols, vals = [], []
+    for col in _BRAND_EDIT:
+        v = request.form.get(col, "").strip()[:400]
+        if v:
+            cols.append(col); vals.append(v)
+    conn = db.connect()
+    try:
+        placeholders = ", ".join("?" for _ in cols)
+        conn.execute(
+            f"INSERT INTO brand_leads ({', '.join(cols)}) VALUES ({placeholders})", vals
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    flash("Brand lead added.", "ok")
+    return redirect(url_for("crm_brands"))
+
+
+@app.route("/crm/brands/<int:bid>/edit", methods=["POST"])
+def crm_brands_edit(bid):
+    sets, args = [], []
+    for col in _BRAND_EDIT:
+        if col in request.form:
+            val = request.form.get(col, "").strip()[:400] or None
+            sets.append(f"{col} = ?"); args.append(val)
+    if not sets:
+        return _done("Nothing to save.", endpoint="crm_brands")
+    conn = db.connect()
+    try:
+        conn.execute(f"UPDATE brand_leads SET {', '.join(sets)} WHERE id = ?", (*args, bid))
+        conn.commit()
+    finally:
+        conn.close()
+    return _done("Saved.", endpoint="crm_brands")
+
+
+@app.route("/crm/brands/<int:bid>/delete", methods=["POST"])
+def crm_brands_delete(bid):
+    conn = db.connect()
+    try:
+        conn.execute("DELETE FROM brand_leads WHERE id = ?", (bid,))
+        conn.commit()
+    finally:
+        conn.close()
+    return _done("Brand lead removed.", endpoint="crm_brands")
+
+
 def _pageof(rows, arg, per=50):
     """Slice a result list to the page named by query arg. -> (slice, page, pages)"""
     try:
