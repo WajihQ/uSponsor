@@ -4,5 +4,10 @@ sponsors.db
 sponsors.db-wal
 sponsors.db-shm
 uploads/
+.env
+# local cleanup artifacts (contain data; keep them, don't commit)
+cleanup_backup_*.csv
+brand_cleanup_proposal.csv
+needs_review.csv
 .venv/
 venv/

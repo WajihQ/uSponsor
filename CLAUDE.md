@@ -61,17 +61,38 @@ on the owner's Windows PC (`python app.py` → http://127.0.0.1:5000).
 - Row actions must not reload the page (`data-ajax` pattern).
 - Commit style: what+why prose; push to `main` (owner works from main).
 
-## Where we left off / agreed next step
+## DB cleanup: Claude does it in-session, on request (no LLM APIs)
 
-Owner approved adding an **optional LLM tier** for brand extraction:
-- Claude Haiku 4.5 (`claude-haiku-4-5`), key via `ANTHROPIC_API_KEY`, feature
-  fully optional (no key → app behaves exactly as today).
-- LLM is the THIRD tier only: regex first, known-brands/alias pass second, LLM
-  only for the residue (SponsorBlock-flagged videos with no named brand, failed
-  caption auto-naming, maybe low-confidence captures). Keeps cost ~pennies/day.
-- Fold into `segment_pass()` + a "run LLM check" button on the Brands tab.
-- Prompt should include the known-brand/alias list so outputs land on canonical
-  names; output "none" must be handled.
+A free-tier LLM tier (Gemini/Groq/OpenRouter fallback chain) was built, used
+once for a bulk cleanup, and **removed on 2026-07-07** — the classifier proved
+unreliable (it flagged real brands like Acer/AMD/Samsung as junk because it
+didn't recognise them), and gating its output just duplicated the judgment work.
+Owner's standing instruction: **when asked, Claude scans the DB directly in the
+session and cleans up erroneous brands itself** — no API keys, no credits.
+
+How to run a cleanup (the proven method, done 2026-07-06/07):
+
+1. Pull distinct brands not yet in the `brands` table, with a sample `evidence`
+   per brand; read them yourself. Junk = discount phrases ("with code X",
+   "on Amazon", "until 12/1"), codes, dates/prices, symbol/emoji leads, generic
+   filler. KEEP anything naming a real brand/product — even messy variants and
+   @handles; never suppress a real brand. Precision over recall.
+2. Removals: back up rows to a timestamped `cleanup_backup_*.csv` first, mark
+   the junk string `erroneous`, delete its rows, and flag any video left with
+   no sponsor as `review='recover'`.
+3. Recovery: for each `review='recover'` video, read its stored description
+   (slice around sponsor keywords) and name the real sponsor; insert with
+   evidence `"manual: recovered from description (Claude review)"` and set
+   `review='resolved'`. Genuine false positives ("NOT sponsored by X", jokes,
+   editorial, pure affiliate lists) and no-description videos → `review=NULL`.
+4. Consolidations: map variants ("@asusrog", "Dreame X50 Ultra") onto canonical
+   names via `db.consolidate_brand()` (shared with the Brands-tab rename; it
+   records an alias so future scans map the variant automatically).
+
+Results so far: 7,249 → ~6,600 sponsorship rows; 1,673 → ~870 distinct brands;
+~650 junk strings hidden as `erroneous`; 300+ sponsors hand-recovered; recover
+queue drained to 0. Backups: `cleanup_backup_*.csv` in the project root
+(gitignored).
 
 Other backlog ideas discussed: rising-brands widget (30d vs prior 30d), lapsed
 sponsors (brand sponsored creator before but not in 90d), CSV export of filtered
