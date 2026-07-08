@@ -321,7 +321,7 @@ document.querySelectorAll('table[data-sheet]').forEach(function (table) {
         active: () => !!inp.value,
         match: v => {
           if (!inp.value) return true;
-          if (!v) return false;                    // no date → excluded
+          if (!v) return true;                     // never-contacted: always show (most overdue)
           return v.slice(0, 10) <= inp.value;
         },
       });
