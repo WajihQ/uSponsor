@@ -91,8 +91,7 @@ th.sortable:hover .sortind { color:var(--ink-2); }
 .mfpanel label:hover { background:var(--chip-bg); }
 .mfpanel .mfclear { color:var(--muted); font-size:11.5px; cursor:pointer; padding:3px 6px 5px; }
 .mfpanel .mfclear:hover { color:var(--accent); }
-.dfilter { display:flex; gap:4px; flex-wrap:wrap; }   /* from/to stack when narrow */
-.dfilter input { flex:1 1 74px; min-width:74px; font:inherit; font-size:11.5px; padding:3px 4px;
+.dfilter1 { width:100%; min-width:104px; font:inherit; font-size:11.5px; padding:3px 4px;
   border:1px solid var(--ring); border-radius:6px; background:var(--page); color:var(--ink);
   font-variant-numeric:tabular-nums; }
 /* click-to-edit text cells: compact, size to content, edit on click */
@@ -312,20 +311,18 @@ document.querySelectorAll('table[data-sheet]').forEach(function (table) {
       wrap.appendChild(btn); wrap.appendChild(panel); cell.appendChild(wrap);
       filters.push({ i, active: () => chosen.size > 0, match: v => chosen.has(v) });
 
-    } else if (kind === 'date') {                  // from / to date range
-      const wrap = document.createElement('div'); wrap.className = 'dfilter';
-      const mn = document.createElement('input'); mn.type = 'date'; mn.title = 'from (on or after)';
-      const mx = document.createElement('input'); mx.type = 'date'; mx.title = 'to (on or before)';
-      mn.addEventListener('input', apply); mx.addEventListener('input', apply);
-      wrap.appendChild(mn); wrap.appendChild(mx); cell.appendChild(wrap);
+    } else if (kind === 'date') {                  // show rows dated on or before this date
+      const inp = document.createElement('input'); inp.type = 'date'; inp.className = 'dfilter1';
+      inp.title = 'show rows dated on or before this date';
+      inp.addEventListener('input', apply);
+      cell.appendChild(inp);
       filters.push({
         i,
-        active: () => !!(mn.value || mx.value),
+        active: () => !!inp.value,
         match: v => {
-          if (!mn.value && !mx.value) return true;
-          const d = v ? v.slice(0, 10) : '';
-          if (!d) return !mn.value;                // never-contacted: show unless a "from" bound is set
-          return (!mn.value || d >= mn.value) && (!mx.value || d <= mx.value);
+          if (!inp.value) return true;
+          if (!v) return false;                    // no date → excluded
+          return v.slice(0, 10) <= inp.value;
         },
       });
 
