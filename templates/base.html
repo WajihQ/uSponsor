@@ -41,6 +41,7 @@ button.primary { background:var(--accent); color:var(--accent-ink); border-color
 button.danger { color:var(--bad); }
 button:disabled { opacity:.55; cursor:default; }
 main { max-width:1180px; margin:0 auto; padding:20px 22px 60px; }
+main.wide { max-width:none; }  /* CRM tables use the whole window */
 .card { background:var(--surface); border:1px solid var(--ring); border-radius:12px;
         padding:16px 18px; margin-bottom:20px; }
 .card h2 { margin:0 0 4px; font-size:15px; }
@@ -107,7 +108,7 @@ tbody.addrow input, tbody.addrow select { width:100%; font:inherit; padding:5px 
     <button class="primary" {{ 'disabled' if scan.running }}>{{ 'Scanning…' if scan.running else 'Scan now' }}</button>
   </form>
 </header>
-<main>
+<main class="{% block main_class %}{% endblock %}">
   {% with msgs = get_flashed_messages(with_categories=true) %}
     {% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
   {% endwith %}

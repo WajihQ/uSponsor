@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Influencer CRM — uSponsor{% endblock %}
+{% block main_class %}wide{% endblock %}
 {% block style %}
 .pills { display:flex; gap:16px; margin:2px 0 0; color:var(--ink-2); font-size:13px; align-items:center; flex-wrap:wrap; }
 .pills b { color:var(--ink); }
@@ -34,6 +35,9 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
     <input class="gsearch" id="inflSearch" type="text" placeholder="Search all columns…">
   </div>
 </div>
+
+{% include "_gmail_card.html" %}
+{% include "_instantly_card.html" %}
 
 <div class="card scroll">
   <table data-sheet data-search="inflSearch">
@@ -118,9 +122,6 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
     </tbody>
   </table>
 </div>
-
-{% include "_gmail_card.html" %}
-{% include "_instantly_card.html" %}
 
 <div class="card">
   <h2>Import from your Google Sheet</h2>

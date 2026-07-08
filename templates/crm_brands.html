@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Brand CRM — uSponsor{% endblock %}
+{% block main_class %}wide{% endblock %}
 {% block style %}
 .pills { display:flex; gap:16px; margin:2px 0 0; color:var(--ink-2); font-size:13px; align-items:center; flex-wrap:wrap; }
 .pills b { color:var(--ink); }
@@ -34,18 +35,22 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
   </div>
 </div>
 
+{% include "_gmail_card.html" %}
+{% include "_instantly_card.html" %}
+
 <div class="card scroll">
   <table data-sheet data-search="brandSearch">
     <thead>
       <tr>
-        <th data-filter="text">Person</th>
+        <th data-filter="none">Person</th>
         <th data-filter="text">Brand</th>
-        <th data-filter="text">Role</th>
-        <th data-filter="text">Email</th>
+        <th data-filter="none">Role</th>
+        <th data-filter="none">Email</th>
         <th data-filter="select">Niche</th>
         <th data-filter="select">Status</th>
         <th data-filter="select">Instantly</th>
         <th data-filter="select">Country</th>
+        <th data-filter="text">Location</th>
         <th data-filter="text">Initial email</th>
         <th data-filter="text">Last contact</th>
         <th data-filter="text">Influencers</th>
@@ -72,6 +77,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
         </td>
         <td></td>
         <td><input form="addbrand" name="country" placeholder="country"></td>
+        <td><input form="addbrand" name="location" placeholder="location"></td>
         <td><input form="addbrand" name="first_contacted" placeholder="YYYY-MM-DD"></td>
         <td><input form="addbrand" name="last_contacted" placeholder="YYYY-MM-DD"></td>
         <td><input form="addbrand" name="influencers" placeholder="influencers"></td>
@@ -99,6 +105,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
         </td>
         <td>{% if b.instantly_status %}<span class="ibadge {{ b.instantly_status|replace(' ','-') }}">{{ b.instantly_status }}</span>{% endif %}</td>
         <td><input form="bl{{ b.id }}" class="ed" name="country" value="{{ b.country or '' }}" placeholder="—"></td>
+        <td><input form="bl{{ b.id }}" class="ed" name="location" value="{{ b.location or '' }}" placeholder="—"></td>
         <td><input form="bl{{ b.id }}" class="ed dt" name="first_contacted" value="{{ b.first_contacted or '' }}" placeholder="—"></td>
         <td><input form="bl{{ b.id }}" class="ed dt" name="last_contacted" value="{{ b.last_contacted or '' }}" placeholder="—"></td>
         <td><textarea form="bl{{ b.id }}" class="ed" name="influencers" rows="1" placeholder="—">{{ b.influencers or '' }}</textarea></td>
@@ -110,14 +117,11 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="13" style="color:var(--muted)">No brand leads yet. Add one in the row above, or import your sheet below.</td></tr>
+      <tr><td colspan="14" style="color:var(--muted)">No brand leads yet. Add one in the row above, or import your sheet below.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
-
-{% include "_gmail_card.html" %}
-{% include "_instantly_card.html" %}
 
 <div class="card">
   <h2>Import from your Google Sheet</h2>
