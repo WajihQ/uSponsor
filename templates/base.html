@@ -98,6 +98,7 @@ th.sortable:hover .sortind { color:var(--ink-2); }
 /* click-to-edit text cells: compact, size to content, edit on click */
 td.c { max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:text; }
 td.c.c-multi { max-width:260px; white-space:normal; }
+td.c.c-wrap { max-width:140px; white-space:normal; }   /* wraps but edits as one line */
 td.c:hover { background:var(--chip-bg); }
 td.c:empty::before, .who .c:empty::before { content:'—'; color:var(--muted); }
 .c.editing { overflow:visible; max-width:none; background:var(--surface); }
