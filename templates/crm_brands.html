@@ -93,7 +93,10 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
         </td>
         <td class="c" data-f="brand">{{ b.brand or '' }}</td>
         <td class="c c-wrap" data-f="role">{{ b.role or '' }}</td>
-        <td class="c" data-f="email">{{ b.email or '' }}</td>
+        <td class="emailcell">
+          <span class="c" data-f="email">{{ b.email or '' }}</span>
+          {% if b.email %}<button type="button" class="copybtn" title="Copy email">📋</button>{% endif %}
+        </td>
         <td class="c" data-f="niche">{{ b.niche or '' }}</td>
         <td class="c" data-f="status" data-sel="status">{{ b.status or '' }}</td>
         <td>{% if b.instantly_status %}<span class="ibadge {{ b.instantly_status|replace(' ','-') }}">{{ b.instantly_status }}</span>{% endif %}</td>

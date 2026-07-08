@@ -94,7 +94,10 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
             {% if c.status == 'closed' %} · <span style="color:var(--good)">✓ signed</span>{% endif %}
           </div>
         </td>
-        <td class="c" data-f="email">{{ c.email or '' }}</td>
+        <td class="emailcell">
+          <span class="c" data-f="email">{{ c.email or '' }}</span>
+          {% if c.email %}<button type="button" class="copybtn" title="Copy email">📋</button>{% endif %}
+        </td>
         <td class="c" data-f="instagram">{{ c.instagram or '' }}</td>
         <td class="c" data-f="crm_status" data-sel="status">{{ c.crm_status or '' }}</td>
         <td class="c" data-f="revisit_later" data-sel="revisit">{{ c.revisit_later or '' }}</td>
