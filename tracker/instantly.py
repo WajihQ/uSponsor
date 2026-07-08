@@ -70,6 +70,14 @@ def _request(method, path, params=None, body=None, tries=5):
         req = urllib.request.Request(url, data=data, method=method)
         req.add_header("Authorization", "Bearer " + key)
         req.add_header("Content-Type", "application/json")
+        req.add_header("Accept", "application/json")
+        # Cloudflare blocks the default python-urllib UA with 403 error 1010;
+        # a normal browser UA gets through.
+        req.add_header(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        )
         try:
             with urllib.request.urlopen(req, timeout=30) as r:
                 return json.loads(r.read().decode() or "{}")
@@ -158,12 +166,11 @@ def derive_status(lead):
         return "unsubscribed"
     if _num(lead, "email_reply_count", "email_replied_count", "reply_count") > 0:
         return "replied"
-    if _truthy(_first(lead, "is_bounced", "bounced")) or \
-       str(_first(lead, "status_summary", "esp_code") or "").lower().find("bounce") >= 0:
+    if _truthy(_first(lead, "is_bounced", "bounced")):
         return "bounced"
     if _num(lead, "email_open_count", "email_opened_count", "open_count") > 0:
         return "opened"
-    if _first(lead, "timestamp_last_contact", "last_contacted") or \
+    if _first(lead, "timestamp_last_contact", "timestamp_last_touch", "last_contacted") or \
        _num(lead, "email_sent_count", "sent_count") > 0:
         return "contacted"
     return "in campaign"
