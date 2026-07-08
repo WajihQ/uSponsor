@@ -77,6 +77,8 @@ tr.filterrow td { padding:4px 8px 7px; border-bottom:1px solid var(--axis);
 tbody.addrow td { background:var(--chip-bg); border-bottom:2px solid var(--axis); }
 tbody.addrow input, tbody.addrow select { width:100%; font:inherit; padding:5px 7px;
   border:1px solid var(--ring); border-radius:6px; background:var(--surface); color:var(--ink); }
+tbody.addrow.hidden { display:none; }        /* collapsed until "+ Add contact" */
+.addtoggle { margin:0 0 12px; }
 .ibadge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px;
   font-weight:600; white-space:nowrap; background:var(--chip-bg); color:var(--ink-2); }
 .ibadge.replied, .ibadge.interested, .ibadge.meeting-booked, .ibadge.meeting-completed,
@@ -198,6 +200,23 @@ document.querySelectorAll('table[data-sheet]').forEach(function (table) {
   const body = table.querySelector('tbody.data');
   if (!body) return;
   const rows = () => Array.from(body.rows);
+  // collapse the spreadsheet-style add row behind a button so it isn't
+  // a permanent strip of empty boxes above the data
+  const addBody = table.querySelector('tbody.addrow');
+  if (addBody) {
+    addBody.classList.add('hidden');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'addtoggle';
+    btn.textContent = '+ Add contact';
+    table.parentNode.insertBefore(btn, table);
+    btn.addEventListener('click', () => {
+      addBody.classList.toggle('hidden');
+      const open = !addBody.classList.contains('hidden');
+      btn.textContent = open ? 'Close add row' : '+ Add contact';
+      if (open) { const f = addBody.querySelector('input, select'); if (f) f.focus(); }
+    });
+  }
   const cellVal = (row, i) => {
     const c = row.cells[i]; if (!c) return '';
     const f = c.querySelector('input, select, textarea');
