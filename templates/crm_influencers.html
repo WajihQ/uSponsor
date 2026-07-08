@@ -47,6 +47,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
         <th data-filter="text">Initial email</th>
         <th data-filter="text">Last contact</th>
         <th data-filter="none">Follow-ups</th>
+        <th data-filter="select">Instantly</th>
         <th data-filter="text">Notes</th>
       </tr>
     </thead>
@@ -74,6 +75,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
         <td><input form="addinfl" name="first_contacted" placeholder="YYYY-MM-DD"></td>
         <td><input form="addinfl" name="last_contacted" placeholder="YYYY-MM-DD"></td>
         <td><button form="addinfl" class="primary">Add</button></td>
+        <td></td>
         <td><input form="addinfl" name="notes" placeholder="notes"></td>
       </tr>
     </tbody>
@@ -107,16 +109,18 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
         <td><input form="if{{ c.id }}" class="ed dt" name="first_contacted" value="{{ c.first_contacted or '' }}" placeholder="—"></td>
         <td><input form="if{{ c.id }}" class="ed dt" name="last_contacted" value="{{ c.last_contacted or '' }}" placeholder="—"></td>
         <td class="fu">{{ c.followup_count or 0 }}</td>
+        <td>{% if c.instantly_status %}<span class="ibadge {{ c.instantly_status|replace(' ','-') }}">{{ c.instantly_status }}</span>{% endif %}</td>
         <td><textarea form="if{{ c.id }}" class="ed" name="notes" rows="1" placeholder="—">{{ c.notes or '' }}</textarea></td>
       </tr>
       {% else %}
-      <tr><td colspan="9" style="color:var(--muted)">No influencers yet. Add one in the row above, or import your sheet below.</td></tr>
+      <tr><td colspan="10" style="color:var(--muted)">No influencers yet. Add one in the row above, or import your sheet below.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 
 {% include "_gmail_card.html" %}
+{% include "_instantly_card.html" %}
 
 <div class="card">
   <h2>Import from your Google Sheet</h2>

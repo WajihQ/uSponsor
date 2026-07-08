@@ -42,7 +42,7 @@ def _extract_emails(header_value):
 
 
 def _epoch_to_date(ms):
-    return dt.datetime.utcfromtimestamp(int(ms) / 1000).strftime("%Y-%m-%d")
+    return dt.datetime.fromtimestamp(int(ms) / 1000, dt.timezone.utc).strftime("%Y-%m-%d")
 
 
 def aggregate(sends):

@@ -44,6 +44,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
         <th data-filter="text">Email</th>
         <th data-filter="select">Niche</th>
         <th data-filter="select">Status</th>
+        <th data-filter="select">Instantly</th>
         <th data-filter="select">Country</th>
         <th data-filter="text">Initial email</th>
         <th data-filter="text">Last contact</th>
@@ -69,6 +70,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
             {% for s in all_status %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
           </select>
         </td>
+        <td></td>
         <td><input form="addbrand" name="country" placeholder="country"></td>
         <td><input form="addbrand" name="first_contacted" placeholder="YYYY-MM-DD"></td>
         <td><input form="addbrand" name="last_contacted" placeholder="YYYY-MM-DD"></td>
@@ -95,6 +97,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
             {% for s in all_status %}<option value="{{ s }}" {{ 'selected' if b.status==s }}>{{ s }}</option>{% endfor %}
           </select>
         </td>
+        <td>{% if b.instantly_status %}<span class="ibadge {{ b.instantly_status|replace(' ','-') }}">{{ b.instantly_status }}</span>{% endif %}</td>
         <td><input form="bl{{ b.id }}" class="ed" name="country" value="{{ b.country or '' }}" placeholder="—"></td>
         <td><input form="bl{{ b.id }}" class="ed dt" name="first_contacted" value="{{ b.first_contacted or '' }}" placeholder="—"></td>
         <td><input form="bl{{ b.id }}" class="ed dt" name="last_contacted" value="{{ b.last_contacted or '' }}" placeholder="—"></td>
@@ -107,13 +110,14 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="12" style="color:var(--muted)">No brand leads yet. Add one in the row above, or import your sheet below.</td></tr>
+      <tr><td colspan="13" style="color:var(--muted)">No brand leads yet. Add one in the row above, or import your sheet below.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 
 {% include "_gmail_card.html" %}
+{% include "_instantly_card.html" %}
 
 <div class="card">
   <h2>Import from your Google Sheet</h2>

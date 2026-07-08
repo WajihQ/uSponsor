@@ -76,6 +76,13 @@ tr.filterrow td { padding:4px 8px 7px; border-bottom:1px solid var(--axis);
 tbody.addrow td { background:var(--chip-bg); border-bottom:2px solid var(--axis); }
 tbody.addrow input, tbody.addrow select { width:100%; font:inherit; padding:5px 7px;
   border:1px solid var(--ring); border-radius:6px; background:var(--surface); color:var(--ink); }
+.ibadge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px;
+  font-weight:600; white-space:nowrap; background:var(--chip-bg); color:var(--ink-2); }
+.ibadge.replied, .ibadge.interested, .ibadge.meeting-booked, .ibadge.meeting-completed,
+.ibadge.closed { background:rgba(0,99,0,.14); color:var(--good); }
+.ibadge.bounced, .ibadge.unsubscribed, .ibadge.not-interested, .ibadge.lost,
+.ibadge.wrong-person { background:rgba(208,59,59,.14); color:var(--bad); }
+.ibadge.opened { background:var(--chip-bg); color:var(--accent); }
 {% block style %}{% endblock %}
 </style>
 </head>

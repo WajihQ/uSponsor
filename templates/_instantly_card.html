@@ -1,0 +1,41 @@
+<div class="card">
+  <h2>Instantly sync</h2>
+  <p class="sub">Pulls each campaign lead's status from Instantly — <b>replied</b>, <b>opened</b>, <b>bounced</b>, <b>unsubscribed</b>, interest — into the read-only <b>Instantly</b> column (it never overwrites a status you set by hand). Match is by email.</p>
+  {% if instantly.configured %}
+  <div class="pills" style="margin-bottom:12px">
+    <span>{{ ('last synced ' + instantly.last_run) if instantly.last_run else 'never synced' }}{% if instantly.last_result %} · {{ instantly.last_result }}{% endif %}</span>
+  </div>
+  <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+    <form method="post" action="{{ url_for('instantly_sync_now') }}" data-ajax="save" data-done="Instantly sync started">
+      <button class="primary ins-go" {{ 'disabled' if instantly.state.running }}>Sync from Instantly</button>
+    </form>
+    <span id="instantlyStatus" class="sub" style="margin:0">{{ instantly.state.message }}</span>
+  </div>
+  {% else %}
+  <p class="sub">Not connected. Put your Instantly API key in <code>instantly.json</code> as <code>{"api_key": "…"}</code> in the project folder (see <b>SETUP_INSTANTLY.md</b>), then reload.</p>
+  {% endif %}
+</div>
+{% if instantly.configured %}
+<script>
+(function () {
+  const el = document.getElementById('instantlyStatus');
+  if (!el) return;
+  async function tick(prev) {
+    try {
+      const s = await (await fetch('{{ url_for("instantly_status") }}')).json();
+      if (s.state.running) {
+        el.textContent = s.state.message || 'working…';
+        setTimeout(() => tick(true), 2000);
+      } else if (prev) {
+        el.textContent = s.state.message || 'Done';
+        setTimeout(() => location.reload(), 900);
+      }
+    } catch (e) { /* app gone */ }
+  }
+  document.querySelectorAll('.ins-go').forEach(function (b) {
+    b.addEventListener('click', () => setTimeout(() => tick(true), 1200));
+  });
+  if ({{ 'true' if instantly.state.running else 'false' }}) tick(true);
+})();
+</script>
+{% endif %}

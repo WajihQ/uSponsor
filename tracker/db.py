@@ -38,7 +38,9 @@ CREATE TABLE IF NOT EXISTS channels (
     crm_status  TEXT,                             -- outreach lifecycle (wait/soft rejection/...)
     first_contacted TEXT,                         -- date of initial email
     last_contacted  TEXT,                         -- newest follow-up / send (Gmail keeps fresh)
-    followup_count  INTEGER NOT NULL DEFAULT 0
+    followup_count  INTEGER NOT NULL DEFAULT 0,
+    instantly_status   TEXT,                       -- synced from Instantly (replied/bounced/...)
+    instantly_campaign TEXT                        -- campaign the lead sits in
 );
 
 CREATE TABLE IF NOT EXISTS brands (
@@ -65,6 +67,8 @@ CREATE TABLE IF NOT EXISTS brand_leads (
     first_contacted TEXT,                         -- date of initial email
     last_contacted  TEXT,                         -- most recent send (Gmail keeps fresh)
     followup_count  INTEGER NOT NULL DEFAULT 0,
+    instantly_status   TEXT,                       -- synced from Instantly (replied/bounced/...)
+    instantly_campaign TEXT,                       -- campaign the lead sits in
     added_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -146,6 +150,13 @@ def init_db():
                       "crm_status", "first_contacted", "last_contacted"):
                 conn.execute(f"ALTER TABLE channels ADD COLUMN {c} TEXT")
             conn.execute("ALTER TABLE channels ADD COLUMN followup_count INTEGER NOT NULL DEFAULT 0")
+        if "instantly_status" not in cols:  # Instantly sync columns
+            conn.execute("ALTER TABLE channels ADD COLUMN instantly_status TEXT")
+            conn.execute("ALTER TABLE channels ADD COLUMN instantly_campaign TEXT")
+        blcols = {r["name"] for r in conn.execute("PRAGMA table_info(brand_leads)")}
+        if blcols and "instantly_status" not in blcols:
+            conn.execute("ALTER TABLE brand_leads ADD COLUMN instantly_status TEXT")
+            conn.execute("ALTER TABLE brand_leads ADD COLUMN instantly_campaign TEXT")
         vcols = {r["name"] for r in conn.execute("PRAGMA table_info(videos)")}
         if "description" not in vcols:
             conn.execute("ALTER TABLE videos ADD COLUMN description TEXT")

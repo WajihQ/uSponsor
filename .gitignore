@@ -12,5 +12,7 @@ needs_review.csv
 # Gmail OAuth secrets — never commit these
 client_secret*.json
 gmail_tokens/
+# Instantly API key — never commit
+instantly.json
 .venv/
 venv/

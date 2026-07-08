@@ -9,7 +9,7 @@ import os
 from flask import Flask, abort, flash, jsonify, redirect, render_template, request, send_from_directory, url_for
 from werkzeug.utils import secure_filename
 
-from tracker import db, gmail_sync, scraper
+from tracker import db, gmail_sync, instantly, scraper
 from tracker.detector import brand_key
 
 app = Flask(__name__)
@@ -363,7 +363,7 @@ def crm_influencers():
     return render_template(
         "crm_influencers.html", rows=rows, statuses=statuses, counts=counts,
         f_status=f_status, f_revisit=f_revisit, q=q, sort=sort, scan=scraper.STATE,
-        gmail=gmail_sync.status(),
+        gmail=gmail_sync.status(), instantly=instantly.status(),
     )
 
 
@@ -459,7 +459,7 @@ def crm_brands():
     return render_template(
         "crm_brands.html", rows=rows, statuses=statuses, niches=niches, counts=counts,
         f_status=f_status, f_niche=f_niche, q=q, sort=sort, scan=scraper.STATE,
-        gmail=gmail_sync.status(),
+        gmail=gmail_sync.status(), instantly=instantly.status(),
     )
 
 
@@ -545,6 +545,18 @@ def gmail_resync():
 @app.route("/crm/gmail/status")
 def gmail_status():
     return jsonify(gmail_sync.status())
+
+
+@app.route("/crm/instantly/sync", methods=["POST"])
+def instantly_sync_now():
+    started = instantly.start_sync_in_background()
+    return _done("Instantly sync started." if started else "A sync is already running.",
+                 "ok" if started else "err", endpoint="crm_brands")
+
+
+@app.route("/crm/instantly/status")
+def instantly_status():
+    return jsonify(instantly.status())
 
 
 def _pageof(rows, arg, per=50):
