@@ -226,14 +226,20 @@ document.querySelectorAll('table[data-sheet]').forEach(function (table) {
   let globalTerm = '';
   const fRow = thead.insertRow();
   fRow.className = 'filterrow';
+  // gather distinct values for every 'select' column in ONE pass over the rows
+  // (not one full scan per column)
+  const selCols = heads.reduce((a, th, i) => (th.dataset.filter === 'select' ? a.concat(i) : a), []);
+  const distinct = {}; selCols.forEach(i => distinct[i] = new Set());
+  if (selCols.length) rows().forEach(r => selCols.forEach(i => {
+    const v = cellVal(r, i); if (v) distinct[i].add(v);
+  }));
   heads.forEach(function (th, i) {
     const cell = fRow.insertCell();
     if (th.dataset.filter === 'none') return;
     let ctrl;
     if (th.dataset.filter === 'select') {
       ctrl = document.createElement('select');
-      const vals = Array.from(new Set(rows().map(r => cellVal(r, i)).filter(Boolean)))
-        .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+      const vals = Array.from(distinct[i]).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
       const o = document.createElement('option'); o.value = ''; o.textContent = 'All';
       ctrl.appendChild(o);
       vals.forEach(v => { const op = document.createElement('option'); op.textContent = v; ctrl.appendChild(op); });

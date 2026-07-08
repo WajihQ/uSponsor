@@ -13,7 +13,8 @@
 .ed:focus { border-color:var(--accent); background:var(--surface); outline:none; }
 select.ed { min-width:120px; }
 .ed.dt { min-width:110px; font-variant-numeric:tabular-nums; }
-textarea.ed { min-width:220px; resize:vertical; line-height:1.35; white-space:pre-wrap; }
+textarea.ed { min-width:220px; resize:vertical; line-height:1.35; white-space:pre-wrap;
+  field-sizing:content; max-height:120px; }
 td .meta { color:var(--muted); font-size:12px; margin-top:3px; }
 td.who { min-width:200px; }
 .fu { text-align:center; font-variant-numeric:tabular-nums; color:var(--ink-2); }
@@ -131,12 +132,19 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
 </div>
 
 <script>
-document.querySelectorAll('.ed').forEach(function (el) {
-  el.addEventListener('change', () => el.form.requestSubmit());
-  if (el.tagName === 'TEXTAREA') {  // auto-grow notes to fit their text
-    const grow = () => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; };
-    el.addEventListener('input', grow); grow();
-  }
+// Inline save + textarea autosize via event delegation — two listeners total
+// instead of one per field, so a large table initialises instantly.
+document.addEventListener('change', function (e) {
+  const t = e.target;
+  if (t.classList && t.classList.contains('ed') && t.form) t.form.requestSubmit();
 });
+if (!(window.CSS && CSS.supports && CSS.supports('field-sizing', 'content'))) {
+  document.addEventListener('input', function (e) {
+    const t = e.target;
+    if (t.tagName === 'TEXTAREA' && t.classList.contains('ed')) {
+      t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px';
+    }
+  });
+}
 </script>
 {% endblock %}
