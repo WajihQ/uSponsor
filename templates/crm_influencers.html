@@ -21,8 +21,6 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
 {% endblock %}
 
 {% block content %}
-{% set infl_status_opts = ['wait','soft rejection','hard rejection','ghosted after reply','i ghosted them','closed'] %}
-{% set all_status = infl_status_opts + (statuses | reject('in', infl_status_opts) | list) %}
 
 <div class="card">
   <h2>Influencer CRM</h2>
@@ -67,7 +65,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
         <td>
           <select form="addinfl" name="crm_status">
             <option value="">status…</option>
-            {% for s in all_status %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+            {% for s in status_options %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
           </select>
         </td>
         <td>
@@ -101,7 +99,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
         <td>
           <select form="if{{ c.id }}" class="ed" name="crm_status">
             <option value=""></option>
-            {% for s in all_status %}<option value="{{ s }}" {{ 'selected' if c.crm_status==s }}>{{ s }}</option>{% endfor %}
+            {% for s in status_options %}<option value="{{ s }}" {{ 'selected' if c.crm_status==s }}>{{ s }}</option>{% endfor %}
           </select>
         </td>
         <td>

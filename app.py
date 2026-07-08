@@ -311,6 +311,20 @@ _INFL_EDIT = {"name", "email", "instagram", "revisit_later", "date_found",
 _BRAND_EDIT = {"person", "brand", "niche", "linkedin", "role", "email", "country",
                "location", "comments", "status", "influencers", "first_contacted",
                "last_contacted"}
+# fallback status vocab for an empty DB; real values (from the imported sheet)
+# always take precedence and keep their own casing so rows match the dropdown
+_BRAND_STATUS_DEFAULTS = ["In Talks", "Interested", "Hard rejection", "Not interested", "Closed"]
+_INFL_STATUS_DEFAULTS = ["Wait", "Soft Rejection", "Hard rejection",
+                         "Ghosted after Reply", "I ghosted them", "Closed"]
+
+
+def _status_options(db_values, defaults):
+    """Real (sheet) statuses first, then any default not already present
+    (case-insensitively) — so the dropdown never shows a cased duplicate."""
+    seen = {s.lower() for s in db_values}
+    return list(db_values) + [d for d in defaults if d.lower() not in seen]
+
+
 _INFL_SORTS = {
     "stale": "last_contacted IS NULL, last_contacted ASC",   # follow-ups first
     "recent": "last_contacted IS NULL, last_contacted DESC",
@@ -362,6 +376,7 @@ def crm_influencers():
         conn.close()
     return render_template(
         "crm_influencers.html", rows=rows, statuses=statuses, counts=counts,
+        status_options=_status_options(statuses, _INFL_STATUS_DEFAULTS),
         f_status=f_status, f_revisit=f_revisit, q=q, sort=sort, scan=scraper.STATE,
         gmail=gmail_sync.status(), instantly=instantly.status(),
     )
@@ -458,6 +473,7 @@ def crm_brands():
         conn.close()
     return render_template(
         "crm_brands.html", rows=rows, statuses=statuses, niches=niches, counts=counts,
+        status_options=_status_options(statuses, _BRAND_STATUS_DEFAULTS),
         f_status=f_status, f_niche=f_niche, q=q, sort=sort, scan=scraper.STATE,
         gmail=gmail_sync.status(), instantly=instantly.status(),
     )

@@ -20,8 +20,6 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
 {% endblock %}
 
 {% block content %}
-{% set brand_status_opts = ['in talks','interested','hard rejection','not interested','closed'] %}
-{% set all_status = brand_status_opts + (statuses | reject('in', brand_status_opts) | list) %}
 
 <div class="card">
   <h2>Brand CRM</h2>
@@ -72,7 +70,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
         <td>
           <select form="addbrand" name="status">
             <option value="">status…</option>
-            {% for s in all_status %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+            {% for s in status_options %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
           </select>
         </td>
         <td></td>
@@ -100,7 +98,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
         <td>
           <select form="bl{{ b.id }}" class="ed" name="status">
             <option value=""></option>
-            {% for s in all_status %}<option value="{{ s }}" {{ 'selected' if b.status==s }}>{{ s }}</option>{% endfor %}
+            {% for s in status_options %}<option value="{{ s }}" {{ 'selected' if b.status==s }}>{{ s }}</option>{% endfor %}
           </select>
         </td>
         <td>{% if b.instantly_status %}<span class="ibadge {{ b.instantly_status|replace(' ','-') }}">{{ b.instantly_status }}</span>{% endif %}</td>
