@@ -38,7 +38,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
 {% include "_instantly_card.html" %}
 
 <div class="card scroll">
-  <table data-sheet data-search="brandSearch">
+  <table data-sheet data-search="brandSearch" data-editurl="{{ url_for('crm_brands_edit', bid=0) }}">
     <thead>
       <tr>
         <th data-filter="none">Person</th>
@@ -86,29 +86,23 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
     </tbody>
     <tbody class="data">
       {% for b in rows %}
-      <tr>
+      <tr data-id="{{ b.id }}">
         <td class="who">
-          <form id="bl{{ b.id }}" action="{{ url_for('crm_brands_edit', bid=b.id) }}" method="post" data-ajax="save" data-done="Saved"></form>
-          <input form="bl{{ b.id }}" class="ed" name="person" value="{{ b.person or '' }}" placeholder="—">
+          <span class="c" data-f="person">{{ b.person or '' }}</span>
           {% if b.linkedin %}<div class="meta"><a href="{{ b.linkedin }}" target="_blank" rel="noopener">LinkedIn ↗</a></div>{% endif %}
         </td>
-        <td><input form="bl{{ b.id }}" class="ed" name="brand" value="{{ b.brand or '' }}" placeholder="—"></td>
-        <td><input form="bl{{ b.id }}" class="ed" name="role" value="{{ b.role or '' }}" placeholder="—"></td>
-        <td><input form="bl{{ b.id }}" class="ed" name="email" value="{{ b.email or '' }}" placeholder="—" type="email"></td>
-        <td><input form="bl{{ b.id }}" class="ed" name="niche" value="{{ b.niche or '' }}" placeholder="—"></td>
-        <td>
-          <select form="bl{{ b.id }}" class="ed" name="status">
-            <option value=""></option>
-            {% for s in status_options %}<option value="{{ s }}" {{ 'selected' if b.status==s }}>{{ s }}</option>{% endfor %}
-          </select>
-        </td>
+        <td class="c" data-f="brand">{{ b.brand or '' }}</td>
+        <td class="c" data-f="role">{{ b.role or '' }}</td>
+        <td class="c" data-f="email">{{ b.email or '' }}</td>
+        <td class="c" data-f="niche">{{ b.niche or '' }}</td>
+        <td class="c" data-f="status" data-sel="status">{{ b.status or '' }}</td>
         <td>{% if b.instantly_status %}<span class="ibadge {{ b.instantly_status|replace(' ','-') }}">{{ b.instantly_status }}</span>{% endif %}</td>
-        <td><input form="bl{{ b.id }}" class="ed" name="country" value="{{ b.country or '' }}" placeholder="—"></td>
-        <td><input form="bl{{ b.id }}" class="ed" name="location" value="{{ b.location or '' }}" placeholder="—"></td>
-        <td><input form="bl{{ b.id }}" class="ed dt" name="first_contacted" value="{{ b.first_contacted or '' }}" placeholder="—"></td>
-        <td><input form="bl{{ b.id }}" class="ed dt" name="last_contacted" value="{{ b.last_contacted or '' }}" placeholder="—"></td>
-        <td><textarea form="bl{{ b.id }}" class="ed" name="influencers" rows="1" placeholder="—">{{ b.influencers or '' }}</textarea></td>
-        <td><textarea form="bl{{ b.id }}" class="ed" name="comments" rows="1" placeholder="—">{{ b.comments or '' }}</textarea></td>
+        <td class="c" data-f="country">{{ b.country or '' }}</td>
+        <td class="c" data-f="location">{{ b.location or '' }}</td>
+        <td class="c" data-f="first_contacted" data-type="date">{{ b.first_contacted or '' }}</td>
+        <td class="c" data-f="last_contacted" data-type="date">{{ b.last_contacted or '' }}</td>
+        <td class="c c-multi" data-f="influencers">{{ b.influencers or '' }}</td>
+        <td class="c c-multi" data-f="comments">{{ b.comments or '' }}</td>
         <td>
           <form method="post" action="{{ url_for('crm_brands_delete', bid=b.id) }}" data-ajax="remove-row" data-confirm="Remove this brand lead?" data-done="Removed">
             <button class="danger" title="Remove">✕</button>
@@ -132,19 +126,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
 </div>
 
 <script>
-// Inline save + textarea autosize via event delegation — two listeners total
-// instead of one per field, so a 1000-row table initialises instantly.
-document.addEventListener('change', function (e) {
-  const t = e.target;
-  if (t.classList && t.classList.contains('ed') && t.form) t.form.requestSubmit();
-});
-if (!(window.CSS && CSS.supports && CSS.supports('field-sizing', 'content'))) {
-  document.addEventListener('input', function (e) {
-    const t = e.target;
-    if (t.tagName === 'TEXTAREA' && t.classList.contains('ed')) {
-      t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px';
-    }
-  });
-}
+// option lists for the click-to-edit dropdowns (status is a select cell)
+window.__sheetOpts = { status: {{ status_options | tojson }} };
 </script>
 {% endblock %}

@@ -39,7 +39,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
 {% include "_instantly_card.html" %}
 
 <div class="card scroll">
-  <table data-sheet data-search="inflSearch">
+  <table data-sheet data-search="inflSearch" data-editurl="{{ url_for('crm_influencers_edit', cid=0) }}">
     <thead>
       <tr>
         <th data-filter="text">Influencer</th>
@@ -84,9 +84,8 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
     </tbody>
     <tbody class="data">
       {% for c in rows %}
-      <tr>
+      <tr data-id="{{ c.id }}">
         <td class="who">
-          <form id="if{{ c.id }}" action="{{ url_for('crm_influencers_edit', cid=c.id) }}" method="post" data-ajax="save" data-done="Saved"></form>
           <a href="{{ url_for('creator_detail', cid=c.id) }}"><b>{{ c.name or c.input_url }}</b></a>
           <div class="meta">
             {{ c.niche or '—' }}{% if c.subniche %} / {{ c.subniche }}{% endif %}
@@ -95,25 +94,15 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
             {% if c.status == 'closed' %} · <span style="color:var(--good)">✓ signed</span>{% endif %}
           </div>
         </td>
-        <td><input form="if{{ c.id }}" class="ed" name="email" value="{{ c.email or '' }}" placeholder="—" type="email"></td>
-        <td><input form="if{{ c.id }}" class="ed" name="instagram" value="{{ c.instagram or '' }}" placeholder="—"></td>
-        <td>
-          <select form="if{{ c.id }}" class="ed" name="crm_status">
-            <option value=""></option>
-            {% for s in status_options %}<option value="{{ s }}" {{ 'selected' if c.crm_status==s }}>{{ s }}</option>{% endfor %}
-          </select>
-        </td>
-        <td>
-          <select form="if{{ c.id }}" class="ed" name="revisit_later">
-            <option value=""></option>
-            {% for r in ['yes','maybe','no'] %}<option value="{{ r }}" {{ 'selected' if c.revisit_later==r }}>{{ r }}</option>{% endfor %}
-          </select>
-        </td>
-        <td><input form="if{{ c.id }}" class="ed dt" name="first_contacted" value="{{ c.first_contacted or '' }}" placeholder="—"></td>
-        <td><input form="if{{ c.id }}" class="ed dt" name="last_contacted" value="{{ c.last_contacted or '' }}" placeholder="—"></td>
+        <td class="c" data-f="email">{{ c.email or '' }}</td>
+        <td class="c" data-f="instagram">{{ c.instagram or '' }}</td>
+        <td class="c" data-f="crm_status" data-sel="status">{{ c.crm_status or '' }}</td>
+        <td class="c" data-f="revisit_later" data-sel="revisit">{{ c.revisit_later or '' }}</td>
+        <td class="c" data-f="first_contacted" data-type="date">{{ c.first_contacted or '' }}</td>
+        <td class="c" data-f="last_contacted" data-type="date">{{ c.last_contacted or '' }}</td>
         <td class="fu">{{ c.followup_count or 0 }}</td>
         <td>{% if c.instantly_status %}<span class="ibadge {{ c.instantly_status|replace(' ','-') }}">{{ c.instantly_status }}</span>{% endif %}</td>
-        <td><textarea form="if{{ c.id }}" class="ed" name="notes" rows="1" placeholder="—">{{ c.notes or '' }}</textarea></td>
+        <td class="c c-multi" data-f="notes">{{ c.notes or '' }}</td>
       </tr>
       {% else %}
       <tr><td colspan="10" style="color:var(--muted)">No influencers yet. Add one in the row above, or import your sheet below.</td></tr>
@@ -132,19 +121,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
 </div>
 
 <script>
-// Inline save + textarea autosize via event delegation — two listeners total
-// instead of one per field, so a large table initialises instantly.
-document.addEventListener('change', function (e) {
-  const t = e.target;
-  if (t.classList && t.classList.contains('ed') && t.form) t.form.requestSubmit();
-});
-if (!(window.CSS && CSS.supports && CSS.supports('field-sizing', 'content'))) {
-  document.addEventListener('input', function (e) {
-    const t = e.target;
-    if (t.tagName === 'TEXTAREA' && t.classList.contains('ed')) {
-      t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px';
-    }
-  });
-}
+// option lists for the click-to-edit dropdowns (Status + Revisit are selects)
+window.__sheetOpts = { status: {{ status_options | tojson }}, revisit: ['yes', 'maybe', 'no'] };
 </script>
 {% endblock %}

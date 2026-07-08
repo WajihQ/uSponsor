@@ -91,10 +91,22 @@ th.sortable:hover .sortind { color:var(--ink-2); }
 .mfpanel label:hover { background:var(--chip-bg); }
 .mfpanel .mfclear { color:var(--muted); font-size:11.5px; cursor:pointer; padding:3px 6px 5px; }
 .mfpanel .mfclear:hover { color:var(--accent); }
-.dfilter { display:flex; gap:4px; }
-.dfilter input { width:100%; min-width:76px; font:inherit; font-size:11.5px; padding:3px 4px;
+.dfilter { display:flex; gap:4px; flex-wrap:wrap; }   /* from/to stack when narrow */
+.dfilter input { flex:1 1 74px; min-width:74px; font:inherit; font-size:11.5px; padding:3px 4px;
   border:1px solid var(--ring); border-radius:6px; background:var(--page); color:var(--ink);
   font-variant-numeric:tabular-nums; }
+/* click-to-edit text cells: compact, size to content, edit on click */
+td.c { max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:text; }
+td.c.c-multi { max-width:260px; white-space:normal; }
+td.c:hover { background:var(--chip-bg); }
+td.c:empty::before, .who .c:empty::before { content:'—'; color:var(--muted); }
+.c.editing { overflow:visible; max-width:none; background:var(--surface); }
+.who .c { display:inline-block; max-width:150px; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; vertical-align:bottom; cursor:text; }
+.who .c:hover { background:var(--chip-bg); }
+.cellinput { width:200px; max-width:60vw; font:inherit; padding:5px 7px; border:1px solid var(--accent);
+  border-radius:6px; background:var(--surface); color:var(--ink); box-sizing:border-box; }
+textarea.cellinput { width:260px; resize:vertical; line-height:1.35; }
 tbody.addrow td { background:var(--chip-bg); border-bottom:2px solid var(--axis); }
 tbody.addrow input, tbody.addrow select { width:100%; font:inherit; padding:5px 7px;
   border:1px solid var(--ring); border-radius:6px; background:var(--surface); color:var(--ink); }
@@ -240,8 +252,10 @@ document.querySelectorAll('table[data-sheet]').forEach(function (table) {
   }
   const cellVal = (row, i) => {
     const c = row.cells[i]; if (!c) return '';
-    const f = c.querySelector('input, select, textarea');
-    return ((f ? f.value : c.textContent) || '').trim();
+    const ed = c.querySelector('input, select, textarea');   // a cell being edited
+    if (ed) return (ed.value || '').trim();
+    const cc = c.querySelector('.c');                         // editable text held in a child span
+    return ((cc ? cc.textContent : c.textContent) || '').trim();
   };
   const filters = [];   // each: {i, active():bool, match(cellValue):bool}
   let globalTerm = '';
@@ -360,6 +374,56 @@ document.querySelectorAll('table[data-sheet]').forEach(function (table) {
       });
       rs.forEach(r => body.appendChild(r));
     });
+  });
+
+  // Click-to-edit: data cells render as light text and only become an input
+  // while you're editing one — keeps the DOM ~10x smaller than a field per cell.
+  const OPTS = window.__sheetOpts || {};
+  const editTpl = table.dataset.editurl || '';
+  const editUrl = id => editTpl.replace(/0\/edit$/, id + '/edit');
+  body.addEventListener('click', function (e) {
+    const cell = e.target.closest('.c');
+    if (!cell || !body.contains(cell) || cell.querySelector('input, select, textarea')) return;
+    const tr = cell.closest('tr'); const id = tr && tr.dataset.id;
+    if (!id) return;
+    const field = cell.dataset.f, original = cell.textContent.trim();
+    let ctrl;
+    if (cell.dataset.sel) {
+      ctrl = document.createElement('select');
+      const blank = document.createElement('option'); blank.value = ''; blank.textContent = '—';
+      ctrl.appendChild(blank);
+      (OPTS[cell.dataset.sel] || []).forEach(o => {
+        const op = document.createElement('option'); op.textContent = o;
+        if (o === original) op.selected = true; ctrl.appendChild(op);
+      });
+    } else if (cell.classList.contains('c-multi')) {
+      ctrl = document.createElement('textarea'); ctrl.value = original; ctrl.rows = 2;
+    } else {
+      ctrl = document.createElement('input');
+      ctrl.type = cell.dataset.type === 'date' ? 'date' : 'text'; ctrl.value = original;
+    }
+    ctrl.className = 'cellinput';
+    cell.classList.add('editing'); cell.textContent = ''; cell.appendChild(ctrl);
+    ctrl.focus(); if (ctrl.select) { try { ctrl.select(); } catch (_) {} }
+    let done = false;
+    function finish(save) {
+      if (done) return; done = true;
+      const val = ctrl.value.trim();
+      cell.classList.remove('editing');
+      cell.textContent = save ? val : original;
+      if (save && val !== original) {
+        const fd = new FormData(); fd.append(field, val);
+        fetch(editUrl(id), { method: 'POST', body: fd, headers: { 'X-Requested-With': 'fetch' } })
+          .then(r => { if (!r.ok) throw 0; })
+          .catch(() => { cell.textContent = original; });
+      }
+    }
+    ctrl.addEventListener('blur', () => finish(true));
+    ctrl.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter' && ctrl.tagName !== 'TEXTAREA') { ev.preventDefault(); ctrl.blur(); }
+      else if (ev.key === 'Escape') { finish(false); }
+    });
+    if (cell.dataset.sel) ctrl.addEventListener('change', () => ctrl.blur());
   });
 });
 </script>
