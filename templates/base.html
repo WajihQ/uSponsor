@@ -110,6 +110,14 @@ td.c:empty::before, .who .c:empty::before { content:'—'; color:var(--muted); }
 .copybtn { border:none; background:transparent; cursor:pointer; color:var(--muted);
   font-size:12px; padding:0 3px; vertical-align:middle; line-height:1; }
 .copybtn:hover { color:var(--accent); }
+/* editable niche / sub-niche / agency line under a channel name */
+.whofields { margin-top:4px; font-size:12px; color:var(--ink-2); display:flex;
+  flex-wrap:wrap; gap:1px 5px; align-items:center; }
+.whofields .sep { color:var(--muted); }
+.whofields .c { display:inline-block; min-width:26px; max-width:120px; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; cursor:text; border-radius:4px; }
+.whofields .c:hover { background:var(--chip-bg); }
+.whofields .c.cq:empty::before { content:attr(data-ph); color:var(--muted); font-style:italic; }
 .cellinput { width:200px; max-width:60vw; font:inherit; padding:5px 7px; border:1px solid var(--accent);
   border-radius:6px; background:var(--surface); color:var(--ink); box-sizing:border-box; }
 textarea.cellinput { width:260px; resize:vertical; line-height:1.35; }
@@ -258,6 +266,7 @@ document.querySelectorAll('table[data-sheet]').forEach(function (table) {
   }
   const cellVal = (row, i) => {
     const c = row.cells[i]; if (!c) return '';
+    if (c.dataset.val != null) return c.dataset.val.trim();   // explicit sort/filter key
     const ed = c.querySelector('input, select, textarea');   // a cell being edited
     if (ed) return (ed.value || '').trim();
     const cc = c.querySelector('.c');                         // editable text held in a child span

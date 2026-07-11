@@ -85,13 +85,21 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
     <tbody class="data">
       {% for c in rows %}
       <tr data-id="{{ c.id }}">
-        <td class="who">
+        <td class="who" data-val="{{ c.name or c.input_url }}">
           <a href="{{ url_for('creator_detail', cid=c.id) }}"><b>{{ c.name or c.input_url }}</b></a>
+          {% if c.subscribers or c.spons or c.status == 'closed' %}
           <div class="meta">
-            {{ c.niche or '—' }}{% if c.subniche %} / {{ c.subniche }}{% endif %}
-            {% if c.subscribers %} · {{ '{:,}'.format(c.subscribers) }} subs{% endif %}
-            {% if c.spons %} · {{ c.spons }} sponsors{% endif %}
+            {% if c.subscribers %}{{ '{:,}'.format(c.subscribers) }} subs{% endif %}
+            {% if c.spons %}{% if c.subscribers %} · {% endif %}{{ c.spons }} sponsors{% endif %}
             {% if c.status == 'closed' %} · <span style="color:var(--good)">✓ signed</span>{% endif %}
+          </div>
+          {% endif %}
+          <div class="whofields">
+            <span class="c cq" data-f="niche" data-ph="niche">{{ c.niche or '' }}</span>
+            <span class="sep">/</span>
+            <span class="c cq" data-f="subniche" data-ph="sub-niche">{{ c.subniche or '' }}</span>
+            <span class="sep">·</span>
+            <span class="c cq" data-f="agency" data-ph="agency">{{ c.agency or '' }}</span>
           </div>
         </td>
         <td class="emailcell">

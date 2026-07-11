@@ -307,7 +307,7 @@ def channels_niche(cid):
 # fields the inline row editor may write, per CRM
 _INFL_EDIT = {"name", "email", "instagram", "revisit_later", "date_found",
               "crm_status", "first_contacted", "last_contacted", "niche",
-              "subniche", "notes"}
+              "subniche", "agency", "notes"}
 _BRAND_EDIT = {"person", "brand", "niche", "linkedin", "role", "email", "country",
                "location", "comments", "status", "influencers", "first_contacted",
                "last_contacted"}
@@ -770,22 +770,24 @@ def creator_detail(cid):
             "SELECT COUNT(*) / 3.0 FROM videos WHERE channel_ref = ? AND upload_date >= ?",
             (cid, (dt.date.today() - dt.timedelta(days=90)).isoformat()),
         ).fetchone()[0]
+        # everywhere here, hide junk detections flagged 'erroneous' in the CRM
+        NOT_ERR = " AND s.brand_key NOT IN (SELECT brand_key FROM brands WHERE kind = 'erroneous')"
         brands = conn.execute(
             "SELECT s.brand_key, MIN(s.brand) AS name, COUNT(*) AS n, MAX(v.upload_date) AS last_seen"
             " FROM sponsorships s JOIN videos v ON v.id = s.video_ref"
-            " WHERE v.channel_ref = ? GROUP BY s.brand_key ORDER BY n DESC, last_seen DESC",
+            " WHERE v.channel_ref = ?" + NOT_ERR + " GROUP BY s.brand_key ORDER BY n DESC, last_seen DESC",
             (cid,),
         ).fetchall()
         months = conn.execute(
             "SELECT substr(v.upload_date, 1, 7) AS month, COUNT(*) AS n"
             " FROM sponsorships s JOIN videos v ON v.id = s.video_ref"
-            " WHERE v.channel_ref = ? AND v.upload_date IS NOT NULL"
+            " WHERE v.channel_ref = ? AND v.upload_date IS NOT NULL" + NOT_ERR +
             " GROUP BY month ORDER BY month DESC LIMIT 12",
             (cid,),
         ).fetchall()[::-1]
         videos = conn.execute(
             "SELECT v.*, (SELECT GROUP_CONCAT(s.brand, ', ') FROM sponsorships s"
-            "  WHERE s.video_ref = v.id) AS sponsors"
+            "  WHERE s.video_ref = v.id" + NOT_ERR + ") AS sponsors"
             " FROM videos v WHERE v.channel_ref = ? ORDER BY v.upload_date DESC LIMIT 25",
             (cid,),
         ).fetchall()
