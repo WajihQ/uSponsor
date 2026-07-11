@@ -89,7 +89,10 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
       <tr data-id="{{ b.id }}">
         <td class="who">
           <span class="c" data-f="person">{{ b.person or '' }}</span>
-          {% if b.linkedin %}<div class="meta"><a href="{{ b.linkedin }}" target="_blank" rel="noopener">LinkedIn ↗</a></div>{% endif %}
+          <div class="whofields">
+            <span class="c cq" data-f="linkedin" data-ph="+ LinkedIn">{{ b.linkedin or '' }}</span>
+            {% if b.linkedin %}<a href="{{ b.linkedin }}" target="_blank" rel="noopener" class="lnopen" title="Open LinkedIn">↗</a>{% endif %}
+          </div>
         </td>
         <td class="c" data-f="brand">{{ b.brand or '' }}</td>
         <td class="c c-wrap" data-f="role">{{ b.role or '' }}</td>
