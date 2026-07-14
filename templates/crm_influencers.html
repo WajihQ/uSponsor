@@ -60,6 +60,9 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
           <form id="addinfl" action="{{ url_for('crm_influencers_add') }}" method="post"></form>
           <input form="addinfl" name="link" placeholder="channel URL or @handle *" required>
           <input form="addinfl" name="name" placeholder="name (optional)">
+          <input form="addinfl" name="niche" placeholder="niche">
+          <input form="addinfl" name="subniche" placeholder="sub-niche">
+          <input form="addinfl" name="agency" placeholder="agency">
         </td>
         <td><input form="addinfl" name="email" placeholder="email" type="email"></td>
         <td><input form="addinfl" name="instagram" placeholder="@ig"></td>
@@ -87,10 +90,11 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
       <tr data-id="{{ c.id }}">
         <td class="who" data-val="{{ c.name or c.input_url }}">
           <a href="{{ url_for('creator_detail', cid=c.id) }}"><b>{{ c.name or c.input_url }}</b></a>
-          {% if c.subscribers or c.spons or c.status == 'closed' %}
+          {% if c.subscribers or c.spons or c.status == 'closed' or avg_views.get(c.id) %}
           <div class="meta">
             {% if c.subscribers %}{{ '{:,}'.format(c.subscribers) }} subs{% endif %}
-            {% if c.spons %}{% if c.subscribers %} · {% endif %}{{ c.spons }} sponsors{% endif %}
+            {% if avg_views.get(c.id) %}{% if c.subscribers %} · {% endif %}{{ avg_views[c.id] }} avg views{% endif %}
+            {% if c.spons %} · {{ c.spons }} sponsors{% endif %}
             {% if c.status == 'closed' %} · <span style="color:var(--good)">✓ signed</span>{% endif %}
           </div>
           {% endif %}

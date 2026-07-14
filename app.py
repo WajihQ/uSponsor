@@ -42,6 +42,16 @@ def _done(message, category="ok", endpoint="dashboard"):
     return redirect(request.referrer or url_for(endpoint))
 
 
+def _compact(n):
+    """1_463_234 -> '1.5M', 32_607 -> '33K'."""
+    n = float(n)
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.0f}K"
+    return str(int(n))
+
+
 def _since(days_param):
     if days_param == "all":
         return "0000-00-00"
@@ -372,10 +382,26 @@ def crm_influencers():
             "emailed": sum(1 for r in rows if r["first_contacted"]),
             "no_email": sum(1 for r in rows if not r["email"]),
         }
+        # adjusted average views per channel (same rule as the profile page:
+        # newest 12 videos with view data, drop the single highest+lowest)
+        by = {}
+        for r in conn.execute(
+            "SELECT channel_ref, view_count FROM videos"
+            " WHERE view_count IS NOT NULL AND view_count > 0"
+            " ORDER BY channel_ref, upload_date DESC"
+        ):
+            by.setdefault(r["channel_ref"], []).append(r["view_count"])
+        avg_views = {}
+        for ch_id, vals in by.items():
+            vals = vals[:12]
+            trimmed = sorted(vals)[1:-1] if len(vals) >= 3 else vals
+            if trimmed:
+                avg_views[ch_id] = _compact(sum(trimmed) / len(trimmed))
     finally:
         conn.close()
     return render_template(
         "crm_influencers.html", rows=rows, statuses=statuses, counts=counts,
+        avg_views=avg_views,
         status_options=_status_options(statuses, _INFL_STATUS_DEFAULTS),
         f_status=f_status, f_revisit=f_revisit, q=q, sort=sort, scan=scraper.STATE,
         gmail=gmail_sync.status(), instantly=instantly.status(),
