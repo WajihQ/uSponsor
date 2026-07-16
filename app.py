@@ -601,6 +601,18 @@ def instantly_status():
     return jsonify(instantly.status())
 
 
+@app.route("/campaigns")
+def campaigns_page():
+    data, error = None, None
+    if instantly.configured():
+        try:
+            data = instantly.sending_forecast(6)
+        except Exception as e:
+            error = str(e)
+    return render_template("campaigns.html", data=data, error=error,
+                           configured=instantly.configured(), scan=scraper.STATE)
+
+
 def _pageof(rows, arg, per=50):
     """Slice a result list to the page named by query arg. -> (slice, page, pages)"""
     try:

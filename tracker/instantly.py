@@ -132,6 +132,95 @@ def iter_leads(campaign_id=None):
     yield from _paged("/leads/list", body=body, method="POST")
 
 
+# --- sending forecast (Campaigns page) --------------------------------------
+
+def _emails_of(c):
+    """The sending mailbox address(es) a campaign uses."""
+    out = []
+    for e in (c.get("email_list") or c.get("accounts") or []):
+        if isinstance(e, str):
+            out.append(e)
+        elif isinstance(e, dict):
+            out.append(e.get("email") or e.get("id"))
+    return [e for e in out if e]
+
+
+def _sends_on(campaign, d):
+    """Is an active campaign scheduled to send on date d (any of its schedule
+    blocks enables that weekday and the date is within start/end)?"""
+    sched = campaign.get("campaign_schedule") or {}
+    idx = str((d.weekday() + 1) % 7)          # Instantly days: 0=Sun .. 6=Sat
+    for s in (sched.get("schedules") or []):
+        if not (s.get("days") or {}).get(idx):
+            continue
+        sd = (sched.get("start_date") or "")[:10]
+        ed = (sched.get("end_date") or "")[:10]
+        if sd and d.isoformat() < sd:
+            continue
+        if ed and d.isoformat() > ed:
+            continue
+        return True
+    return False
+
+
+def sending_forecast(days=6):
+    """Estimated outreach emails per day for today + (days-1) ahead.
+
+    A campaign contributes its daily_limit on days its schedule sends; each
+    mailbox is then capped at its own daily_limit (the hard ceiling on all sends
+    from that inbox), so campaigns sharing an inbox compete rather than stack.
+    """
+    campaigns = list(_paged("/campaigns"))
+    accounts = {}
+    for a in _paged("/accounts"):
+        em = a.get("email")
+        if em:
+            accounts[em] = {"limit": a.get("daily_limit") or 0, "active": a.get("status") == 1}
+    active = [c for c in campaigns if c.get("status") == 1]
+
+    today = dt.date.today()
+    out_days = []
+    for i in range(days):
+        d = today + dt.timedelta(days=i)
+        load, camps = {}, []
+        for c in active:
+            if not _sends_on(c, d):
+                continue
+            limit = c.get("daily_limit") or 0
+            mbs = _emails_of(c)
+            camps.append({"name": c.get("name") or c.get("id"), "count": limit,
+                          "mailbox": mbs[0] if mbs else None})
+            for m in (mbs or [None]):
+                load[m] = load.get(m, 0) + limit / len(mbs or [None])
+        mailboxes, total = [], 0
+        for m, want in sorted(load.items(), key=lambda kv: str(kv[0])):
+            acct = accounts.get(m)
+            cap = acct["limit"] if acct else None
+            paused = bool(acct) and not acct["active"]
+            sent = 0 if paused else (min(want, cap) if cap is not None else want)
+            total += sent
+            mailboxes.append({
+                "email": m or "(unknown mailbox)", "count": round(sent),
+                "want": round(want), "limit": cap,
+                "over": cap is not None and want > cap, "paused": paused,
+            })
+        out_days.append({
+            "date": d.isoformat(), "label": d.strftime("%a %b %d"),
+            "today": i == 0, "weekend": d.weekday() >= 5,
+            "total": round(total),
+            "campaigns": sorted(camps, key=lambda x: -x["count"]),
+            "mailboxes": mailboxes,
+        })
+
+    return {
+        "days": out_days,
+        "active_campaigns": len(active),
+        "total_campaigns": len(campaigns),
+        "mailboxes": sum(1 for a in accounts.values() if a["active"]),
+        "capacity": sum(a["limit"] for a in accounts.values() if a["active"]),
+    }
+
+
 # --- pure logic (unit-tested) ----------------------------------------------
 
 def _num(lead, *names):
