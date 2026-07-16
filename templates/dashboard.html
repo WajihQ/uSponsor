@@ -180,7 +180,7 @@ td a:hover b { color:var(--accent); }
       </tr>
       {% for row in heatmap.rows %}
       <tr>
-        <td class="rowlab"><a href="{{ filt_url('brand', row.key) }}" title="Filter to {{ row.brand }}">{{ row.brand }}</a></td>
+        <td class="rowlab"><a href="{{ url_for('brand_detail', key=row.key) }}" title="Open {{ row.brand }}">{{ row.brand }}</a></td>
         {% for n in row.cells %}
           {% if n == 0 %}
             <td class="c c0"></td>
@@ -222,7 +222,7 @@ td a:hover b { color:var(--accent); }
       {% for r in rows %}
       <tr>
         <td class="num" style="white-space:nowrap">{{ r.upload_date or '—' }}</td>
-        <td><a href="{{ filt_url('brand', r.brand_key) }}" title="Filter to {{ r.brand }}"><b>{{ r.brand }}</b></a>{{ ' 🚫' if r.brand_key in boycott_keys }}</td>
+        <td><a href="{{ url_for('brand_detail', key=r.brand_key) }}" title="Open {{ r.brand }}"><b>{{ r.brand }}</b></a>{{ ' 🚫' if r.brand_key in boycott_keys }}</td>
         <td><a href="{{ filt_url('creator', r.creator_id) }}" title="Filter to {{ r.creator }}">{{ r.creator }}</a></td>
         <td><a href="{{ r.url }}" target="_blank">{{ r.title }}</a></td>
         <td class="ev">…{{ r.evidence }}…</td>
