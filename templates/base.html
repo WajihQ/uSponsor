@@ -218,6 +218,13 @@ tbody.addrow.hidden { display:none; }        /* collapsed until "+ Add contact" 
       const cells = row.querySelectorAll('td.num');
       if (cells[0]) cells[0].textContent = '0';
       if (cells[1]) cells[1].textContent = '0';
+    } else if (act === 'toggle-closed') {
+      const inp = f.querySelector('input[name=status]');
+      const btn = f.querySelector('button');
+      const closed = inp.value === 'closed';           // we just set it to this
+      btn.textContent = closed ? '✓ signed' : 'mark closed';
+      btn.classList.toggle('on', closed);
+      inp.value = closed ? 'prospect' : 'closed';       // next click reverses
     }
     toast(f.dataset.done || 'Saved');
   });

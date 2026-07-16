@@ -19,6 +19,13 @@ td .meta { color:var(--muted); font-size:12px; margin-top:3px; }
 td.who { min-width:200px; }
 .fu { text-align:center; font-variant-numeric:tabular-nums; color:var(--ink-2); }
 tbody.addrow .who input { display:block; margin-bottom:5px; }
+.whoactions { margin-top:6px; display:flex; gap:8px; align-items:center; }
+.closebtn { font:inherit; font-size:11.5px; padding:2px 9px; border:1px solid var(--ring);
+  border-radius:999px; background:var(--surface); color:var(--muted); cursor:pointer; }
+.closebtn.on { border-color:var(--good); color:var(--good); background:rgba(0,99,0,.10); font-weight:600; }
+.closebtn:hover { border-color:var(--accent); color:var(--accent); }
+.delbtn { border:none; background:transparent; color:var(--muted); cursor:pointer; font-size:12px; padding:2px 4px; }
+.delbtn:hover { color:var(--bad); }
 {% endblock %}
 
 {% block content %}
@@ -90,12 +97,11 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
       <tr data-id="{{ c.id }}">
         <td class="who" data-val="{{ c.name or c.input_url }}">
           <a href="{{ url_for('creator_detail', cid=c.id) }}"><b>{{ c.name or c.input_url }}</b></a>
-          {% if c.subscribers or c.spons or c.status == 'closed' or avg_views.get(c.id) %}
+          {% if c.subscribers or c.spons or avg_views.get(c.id) %}
           <div class="meta">
             {% if c.subscribers %}{{ '{:,}'.format(c.subscribers) }} subs{% endif %}
             {% if avg_views.get(c.id) %}{% if c.subscribers %} · {% endif %}{{ avg_views[c.id] }} avg views{% endif %}
             {% if c.spons %} · {{ c.spons }} sponsors{% endif %}
-            {% if c.status == 'closed' %} · <span style="color:var(--good)">✓ signed</span>{% endif %}
           </div>
           {% endif %}
           <div class="whofields">
@@ -104,6 +110,15 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
             <span class="c cq" data-f="subniche" data-ph="sub-niche">{{ c.subniche or '' }}</span>
             <span class="sep">·</span>
             <span class="c cq" data-f="agency" data-ph="agency">{{ c.agency or '' }}</span>
+          </div>
+          <div class="whoactions">
+            <form method="post" action="{{ url_for('channels_status', cid=c.id) }}" data-ajax="toggle-closed" data-done="Status updated">
+              <input type="hidden" name="status" value="{{ 'prospect' if c.status == 'closed' else 'closed' }}">
+              <button type="submit" class="closebtn {{ 'on' if c.status == 'closed' }}">{{ '✓ signed' if c.status == 'closed' else 'mark closed' }}</button>
+            </form>
+            <form method="post" action="{{ url_for('channels_delete', cid=c.id) }}" data-ajax="remove-row" data-confirm="Delete this creator and ALL their scanned videos & sponsorships? This can't be undone." data-done="Creator removed">
+              <button type="submit" class="delbtn" title="Delete creator">✕</button>
+            </form>
           </div>
         </td>
         <td class="emailcell">
@@ -132,6 +147,20 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
   <form method="post" action="{{ url_for('crm_influencers_import') }}" enctype="multipart/form-data" style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
     <input type="file" name="file" accept=".csv,.txt" required>
     <button class="primary">Import CSV</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Backfill scan</h2>
+  <p class="sub">Pull older uploads for every creator (newest-to-oldest) to deepen sponsor history. Slow — deep backfills over many channels can take a while. Regular <b>Scan now</b> (top-right) keeps things current.</p>
+  <form method="post" action="{{ url_for('scan') }}" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+    <input type="hidden" name="mode" value="backfill">
+    <label style="font-size:13px; color:var(--ink-2)">Go back
+      <select name="years" style="font:inherit; padding:6px 8px; border:1px solid var(--ring); border-radius:8px; background:var(--surface); color:var(--ink)">
+        {% for y in range(1, 6) %}<option value="{{ y }}">{{ y }} year{{ 's' if y > 1 }}</option>{% endfor %}
+      </select>
+    </label>
+    <button class="primary" {{ 'disabled' if scan.running }}>Start backfill</button>
   </form>
 </div>
 
