@@ -233,9 +233,9 @@ def sending_forecast(days=6):
             add(d, name, 1)                          # the step just sent on last_contact (counts if today)
             step = cur
             while step + 1 < nsteps:                 # then chain every remaining step forward
+                delay = int(steps[step].get("delay") or 0)   # a step's delay is the wait AFTER it
                 step += 1
-                base = max(d + dt.timedelta(days=int(steps[step].get("delay") or 0)), today)
-                d = _next_send_day(c, base)
+                d = _next_send_day(c, max(d + dt.timedelta(days=delay), today))
                 if d is None or d > horizon[-1]:
                     break
                 add(d, name, 1)
