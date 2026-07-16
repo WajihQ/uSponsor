@@ -818,11 +818,19 @@ def creator_detail(cid):
             " GROUP BY month ORDER BY month DESC LIMIT 12",
             (cid,),
         ).fetchall()[::-1]
+        vper = 25
+        try:
+            vpage = max(int(request.args.get("vpage", 1)), 1)
+        except ValueError:
+            vpage = 1
+        vtotal = conn.execute("SELECT COUNT(*) FROM videos WHERE channel_ref = ?", (cid,)).fetchone()[0]
+        vpages = max((vtotal + vper - 1) // vper, 1)
+        vpage = min(vpage, vpages)
         videos = conn.execute(
             "SELECT v.*, (SELECT GROUP_CONCAT(s.brand, ', ') FROM sponsorships s"
             "  WHERE s.video_ref = v.id" + NOT_ERR + ") AS sponsors"
-            " FROM videos v WHERE v.channel_ref = ? ORDER BY v.upload_date DESC LIMIT 25",
-            (cid,),
+            " FROM videos v WHERE v.channel_ref = ? ORDER BY v.upload_date DESC LIMIT ? OFFSET ?",
+            (cid, vper, (vpage - 1) * vper),
         ).fetchall()
     finally:
         conn.close()
@@ -852,8 +860,32 @@ def creator_detail(cid):
         "creator.html", ch=ch, stats=stats, cadence=cadence, brands=brands,
         months=months, month_max=max((m["n"] for m in months), default=0),
         videos=videos, email_text=email_text, images=_creator_images(cid),
-        scan=scraper.STATE,
+        vpage=vpage, vpages=vpages, vtotal=vtotal, scan=scraper.STATE,
     )
+
+
+@app.route("/creator/<int:cid>/video/<int:vid>/sponsors", methods=["POST"])
+def creator_video_sponsors(cid, vid):
+    """Set a video's sponsors from a comma-separated list (profile edit). Replaces
+    that video's sponsorships with the entered brands (alias-normalized)."""
+    names = [n.strip() for n in request.form.get("sponsors", "").replace(";", ",").split(",") if n.strip()]
+    conn = db.connect()
+    try:
+        amap = db.alias_map(conn)
+        conn.execute("DELETE FROM sponsorships WHERE video_ref = ?", (vid,))
+        for name in names:
+            nm, key = db.apply_alias(name, amap)
+            if len(key) < 2:
+                continue
+            conn.execute(
+                "INSERT OR IGNORE INTO sponsorships (video_ref, brand, brand_key, evidence)"
+                " VALUES (?, ?, ?, 'manual: set on creator profile')",
+                (vid, nm, key),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return _done("Sponsors updated.", endpoint="creator_detail")
 
 
 @app.route("/creator/<int:cid>/images", methods=["POST"])

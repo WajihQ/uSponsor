@@ -29,6 +29,12 @@ pre.copybox { background:var(--page); border:1px solid var(--ring); border-radiu
 .gallery .del button { width:24px; height:24px; padding:0; font-size:12px; line-height:1;
   border-radius:6px; background:var(--surface); opacity:.85; }
 .ev { color:var(--muted); font-size:12px; }
+.pager { display:flex; gap:14px; align-items:center; margin-top:12px; font-size:13px; }
+.pager .dis { color:var(--muted); }
+.sponsedit input { font:inherit; width:100%; min-width:150px; border:1px solid transparent;
+  border-radius:6px; padding:5px 7px; background:transparent; color:var(--ink); }
+.sponsedit input:hover { border-color:var(--grid); }
+.sponsedit input:focus { border-color:var(--accent); background:var(--surface); outline:none; }
 {% endblock %}
 
 {% block content %}
@@ -40,7 +46,7 @@ pre.copybox { background:var(--page); border:1px solid var(--ring); border-radiu
   <a href="{{ ch.input_url }}" target="_blank">YouTube ↗</a>
   <a href="{{ url_for('dashboard', creator=ch.id, days='all') }}">open in dashboard →</a>
   <span style="flex:1"></span>
-  <a href="{{ url_for('channels') }}">‹ back to Channels</a>
+  <a href="{{ url_for('crm_influencers') }}">‹ back to Influencer CRM</a>
 </div>
 
 <div class="tiles">
@@ -149,7 +155,8 @@ pre.copybox { background:var(--page); border:1px solid var(--ring); border-radiu
 
 <div class="card">
   <h2>Recent videos</h2>
-  <p class="sub">Latest 25 scanned, with views and detected sponsors.</p>
+  <p class="sub">Scanned videos, newest first — {{ '{:,}'.format(vtotal) }} total, 25 per page. Click a <b>Sponsors</b> cell to edit it (comma-separated); it saves on Enter or when you click away.</p>
+  <div data-page="videos">
   <div class="scroll">
     <table>
       <tr><th>Date</th><th>Video</th><th>Views</th><th>Sponsors</th></tr>
@@ -158,10 +165,29 @@ pre.copybox { background:var(--page); border:1px solid var(--ring); border-radiu
         <td class="num" style="white-space:nowrap">{{ v.upload_date or '—' }}</td>
         <td><a href="{{ v.url }}" target="_blank">{{ v.title }}</a></td>
         <td class="num">{{ '{:,}'.format(v.view_count) if v.view_count else '—' }}</td>
-        <td>{{ v.sponsors or '' }}</td>
+        <td>
+          <form class="sponsedit" method="post" action="{{ url_for('creator_video_sponsors', cid=ch.id, vid=v.id) }}" data-ajax="save" data-done="Sponsors updated">
+            <input name="sponsors" value="{{ v.sponsors or '' }}" placeholder="— add sponsor —" autocomplete="off">
+          </form>
+        </td>
       </tr>
       {% endfor %}
     </table>
   </div>
+  {% if vpages > 1 %}
+  <div class="pager">
+    {% if vpage > 1 %}<a href="{{ url_for('creator_detail', cid=ch.id, vpage=vpage - 1) }}">‹ Prev</a>{% else %}<span class="dis">‹ Prev</span>{% endif %}
+    <span>Page {{ vpage }} of {{ vpages }}</span>
+    {% if vpage < vpages %}<a href="{{ url_for('creator_detail', cid=ch.id, vpage=vpage + 1) }}">Next ›</a>{% else %}<span class="dis">Next ›</span>{% endif %}
+  </div>
+  {% endif %}
+  </div>
 </div>
+
+<script>
+// save a video's sponsors on change (delegated so it survives page swaps)
+document.addEventListener('change', function (e) {
+  if (e.target.matches && e.target.matches('.sponsedit input')) e.target.form.requestSubmit();
+});
+</script>
 {% endblock %}
