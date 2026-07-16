@@ -225,21 +225,19 @@ def sending_forecast(days=6):
             if _num(L, "email_reply_count", "email_replied_count") > 0:
                 continue                             # replied -> sequence stops
             cur = _lead_step(L)
-            if cur < 0:
-                new_leads += 1
-                continue
-            nxt = cur + 1
-            if nxt >= nsteps:
-                continue                             # already had the last step
             lc = _iso_date(_first(L, "timestamp_last_contact"))
-            if not lc:
-                new_leads += 1
+            if cur < 0 or not lc:
+                new_leads += 1                       # never sent yet -> paced below
                 continue
-            base = dt.date.fromisoformat(lc) + dt.timedelta(days=int(steps[nxt].get("delay") or 0))
-            if base < today:
-                base = today
-            d = _next_send_day(c, base)
-            if d:
+            d = dt.date.fromisoformat(lc)
+            add(d, name, 1)                          # the step just sent on last_contact (counts if today)
+            step = cur
+            while step + 1 < nsteps:                 # then chain every remaining step forward
+                step += 1
+                base = max(d + dt.timedelta(days=int(steps[step].get("delay") or 0)), today)
+                d = _next_send_day(c, base)
+                if d is None or d > horizon[-1]:
+                    break
                 add(d, name, 1)
         # never-contacted leads get step 1 on upcoming send days, paced by daily_limit
         if new_leads:
