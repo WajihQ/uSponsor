@@ -24,8 +24,9 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
   border-radius:999px; background:var(--surface); color:var(--muted); cursor:pointer; }
 .closebtn.on { border-color:var(--good); color:var(--good); background:rgba(0,99,0,.10); font-weight:600; }
 .closebtn:hover { border-color:var(--accent); color:var(--accent); }
-.delbtn { border:none; background:transparent; color:var(--muted); cursor:pointer; font-size:12px; padding:2px 4px; }
+.delbtn, .rescanbtn { border:none; background:transparent; color:var(--muted); cursor:pointer; font-size:12px; padding:2px 4px; }
 .delbtn:hover { color:var(--bad); }
+.rescanbtn:hover { color:var(--accent); }
 {% endblock %}
 
 {% block content %}
@@ -97,11 +98,12 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
       <tr data-id="{{ c.id }}">
         <td class="who" data-val="{{ c.name or c.input_url }}">
           <a href="{{ url_for('creator_detail', cid=c.id) }}"><b>{{ c.name or c.input_url }}</b></a>
-          {% if c.subscribers or c.spons or avg_views.get(c.id) %}
+          {% if c.subscribers or c.spons or avg_views.get(c.id) or scanned.get(c.id) %}
           <div class="meta">
             {% if c.subscribers %}{{ '{:,}'.format(c.subscribers) }} subs{% endif %}
             {% if avg_views.get(c.id) %}{% if c.subscribers %} · {% endif %}{{ avg_views[c.id] }} avg views{% endif %}
             {% if c.spons %} · {{ c.spons }} sponsors{% endif %}
+            {% if scanned.get(c.id) %} · scanned {{ scanned[c.id] }}{% else %} · <span style="color:var(--muted)">never scanned</span>{% endif %}
           </div>
           {% endif %}
           <div class="whofields">
@@ -115,6 +117,9 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
             <form method="post" action="{{ url_for('channels_status', cid=c.id) }}" data-ajax="toggle-closed" data-done="Status updated">
               <input type="hidden" name="status" value="{{ 'prospect' if c.status == 'closed' else 'closed' }}">
               <button type="submit" class="closebtn {{ 'on' if c.status == 'closed' }}">{{ '✓ signed' if c.status == 'closed' else 'mark closed' }}</button>
+            </form>
+            <form method="post" action="{{ url_for('channels_reset', cid=c.id) }}" data-ajax="save" data-confirm="Clear this creator's scanned videos so the next scan re-fetches them fresh? Removes their current sponsorship detections." data-done="Cleared — next scan re-fetches">
+              <button type="submit" class="rescanbtn" title="Re-scan fresh (clear &amp; refetch on next scan)">↻</button>
             </form>
             <form method="post" action="{{ url_for('channels_delete', cid=c.id) }}" data-ajax="remove-row" data-confirm="Delete this creator and ALL their scanned videos & sponsorships? This can't be undone." data-done="Creator removed">
               <button type="submit" class="delbtn" title="Delete creator">✕</button>

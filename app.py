@@ -42,6 +42,26 @@ def _done(message, category="ok", endpoint="dashboard"):
     return redirect(request.referrer or url_for(endpoint))
 
 
+def _ago(ts):
+    """A timestamp string -> friendly relative age ('today', '3d ago')."""
+    if not ts:
+        return None
+    try:
+        d = dt.datetime.strptime(str(ts)[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    n = (dt.date.today() - d).days
+    if n <= 0:
+        return "today"
+    if n == 1:
+        return "1d ago"
+    if n < 30:
+        return f"{n}d ago"
+    if n < 365:
+        return f"{n // 30}mo ago"
+    return f"{n // 365}y ago"
+
+
 def _compact(n):
     """1_463_234 -> '1.5M', 32_607 -> '33K'."""
     n = float(n)
@@ -234,35 +254,9 @@ def dashboard():
 
 @app.route("/channels")
 def channels():
-    f_status = request.args.get("status", "")
-    if f_status not in ("", "closed", "prospect"):
-        f_status = ""
-    conn = db.connect()
-    try:
-        chans = conn.execute(
-            "SELECT c.*, COUNT(DISTINCT v.id) AS videos, COUNT(s.id) AS spons"
-            " FROM channels c LEFT JOIN videos v ON v.channel_ref = c.id"
-            " LEFT JOIN sponsorships s ON s.video_ref = v.id"
-            + (" WHERE c.status = ?" if f_status else "")
-            + " GROUP BY c.id ORDER BY COALESCE(c.name, c.input_url)",
-            (f_status,) if f_status else (),
-        ).fetchall()
-        niches = [
-            r["niche"] for r in conn.execute(
-                "SELECT DISTINCT niche FROM channels WHERE niche IS NOT NULL AND niche != '' ORDER BY niche"
-            )
-        ]
-        agencies = [
-            r["agency"] for r in conn.execute(
-                "SELECT DISTINCT agency FROM channels WHERE agency IS NOT NULL AND agency != '' ORDER BY agency"
-            )
-        ]
-    finally:
-        conn.close()
-    return render_template(
-        "channels.html", chans=chans, niches=niches, agencies=agencies,
-        f_status=f_status, scan=scraper.STATE,
-    )
+    # The Channels page has been folded into the Influencer CRM; keep the
+    # endpoint so old links and _done() fallbacks still resolve.
+    return redirect(url_for("crm_influencers"))
 
 
 @app.route("/channels/add", methods=["POST"])
@@ -397,11 +391,12 @@ def crm_influencers():
             trimmed = sorted(vals)[1:-1] if len(vals) >= 3 else vals
             if trimmed:
                 avg_views[ch_id] = _compact(sum(trimmed) / len(trimmed))
+        scanned = {r["id"]: _ago(r["last_scanned"]) for r in rows}
     finally:
         conn.close()
     return render_template(
         "crm_influencers.html", rows=rows, statuses=statuses, counts=counts,
-        avg_views=avg_views,
+        avg_views=avg_views, scanned=scanned,
         status_options=_status_options(statuses, _INFL_STATUS_DEFAULTS),
         f_status=f_status, f_revisit=f_revisit, q=q, sort=sort, scan=scraper.STATE,
         gmail=gmail_sync.status(), instantly=instantly.status(),

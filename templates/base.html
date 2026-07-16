@@ -143,7 +143,6 @@ tbody.addrow.hidden { display:none; }        /* collapsed until "+ Add contact" 
   <nav>
     <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">Dashboard</a>
     <a href="{{ url_for('brands') }}" class="{{ 'active' if request.endpoint == 'brands' }}">Brands</a>
-    <a href="{{ url_for('channels') }}" class="{{ 'active' if request.endpoint == 'channels' }}">Channels</a>
     <a href="{{ url_for('crm_influencers') }}" class="{{ 'active' if request.endpoint == 'crm_influencers' }}">Influencer CRM</a>
     <a href="{{ url_for('crm_brands') }}" class="{{ 'active' if request.endpoint == 'crm_brands' }}">Brand CRM</a>
     <a href="{{ url_for('campaigns_page') }}" class="{{ 'active' if request.endpoint == 'campaigns_page' }}">Campaigns</a>
