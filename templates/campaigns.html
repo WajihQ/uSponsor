@@ -22,7 +22,7 @@
 {% block content %}
 <div class="card">
   <h2>Campaigns — sending forecast</h2>
-  <p class="sub">Projected <b>emails per day</b> across your active Instantly campaigns for today and the next five days. Each campaign's number is its <b>recent real send rate</b> (from its own history), summed per day and shown only on the days its schedule sends.</p>
+  <p class="sub">Projected <b>emails per day</b> across your active Instantly campaigns for today and the next five days. Counts only <b>live</b> leads (bounced, unsubscribed, replied and completed leads are excluded) and places each on the day its next sequence step is actually due.</p>
   {% if configured and data %}
   <div class="pills">
     <span><b>{{ data.active_campaigns }}</b> active campaigns</span>
@@ -45,7 +45,7 @@
     {% if day.campaigns %}
     <div class="dbreak">
       {% for c in day.campaigns %}
-      <div class="brow"><span title="{{ c.name }}">{{ c.name }}</span><span class="num">{{ c.count }}{% if c.est %}<span class="est"> ~</span>{% endif %}</span></div>
+      <div class="brow"><span title="{{ c.name }}">{{ c.name }}</span><span class="num">{{ c.count }}</span></div>
       {% endfor %}
     </div>
     {% else %}
@@ -55,7 +55,7 @@
   {% endfor %}
 </div>
 <div class="card" style="margin-top:20px">
-  <p class="sub" style="margin:0">Numbers are projections from each campaign's recent send rate, so they track how your campaigns actually send (leads run down, follow-ups taper). {% if data.any_estimated %}A <b>~</b> marks a brand-new campaign with no history yet — estimated from its daily limit until it has real data. {% endif %}A campaign nearing the end of its leads will taper below its recent rate.</p>
+  <p class="sub" style="margin:0">Each number counts the live leads whose next sequence step falls due that day (next step date = last-contacted + the step's delay, moved to the campaign's next scheduled sending day). Bounced, unsubscribed, replied and finished leads don't count — so this reflects who's actually still getting emails. Never-contacted leads are paced onto upcoming days at the campaign's daily limit.</p>
 </div>
 {% endif %}
 {% endblock %}

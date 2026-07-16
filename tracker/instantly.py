@@ -17,7 +17,6 @@ real lead before trusting a sync.
 import datetime as dt
 import json
 import os
-import statistics as st
 import threading
 import time
 import urllib.error
@@ -164,56 +163,110 @@ def _sends_on(campaign, d):
     return False
 
 
-def _campaign_rate(cid, daily_limit):
-    """A campaign's typical emails/day, from its recent real send history
-    (median of its most recent non-zero sending days). Falls back to the
-    campaign's daily_limit for a brand-new campaign with no history yet.
-    Returns (rate, estimated?)."""
+def _steps_of(campaign):
+    steps = []
+    for s in (campaign.get("sequences") or []):
+        steps.extend(s.get("steps") or [])
+    return steps
+
+
+def _lead_step(lead):
+    """0-based index of the last step a lead received, or -1 if not yet sent.
+    stepID looks like 'seq_step_variant' e.g. '0_1_0' = 2nd email sent."""
+    ls = (lead.get("status_summary") or {}).get("lastStep") or {}
+    sid = ls.get("stepID")
+    if not sid or not lead.get("timestamp_last_contact"):
+        return -1
     try:
-        rows = _request("GET", "/campaigns/analytics/daily", params={"campaign_id": cid})
-    except Exception:
-        rows = None
-    sends = sorted(((r.get("date"), r.get("sent") or 0) for r in (rows or []) if r.get("date")),
-                   reverse=True)
-    recent = [s for _, s in sends if s > 0][:8]
-    if recent:
-        return st.median(recent), False
-    return (daily_limit or 0), True
+        return int(str(sid).split("_")[1])
+    except (IndexError, ValueError):
+        return -1
+
+
+def _next_send_day(campaign, base, limit=21):
+    """First date >= base the campaign's schedule actually sends on."""
+    for i in range(limit):
+        d = base + dt.timedelta(days=i)
+        if _sends_on(campaign, d):
+            return d
+    return None
 
 
 def sending_forecast(days=6):
-    """Projected outreach emails per day for today + (days-1) ahead.
-
-    Each active campaign contributes its recent real daily send rate on the days
-    its schedule sends; the per-day total is just the sum across campaigns.
+    """Projected emails per day for today + (days-1) ahead, from the live lead
+    pipeline. A lead counts toward a day only if it's ACTIVE (Instantly
+    status == 1 — excludes bounced/unsubscribed = negative status, and completed
+    = status 3), hasn't replied, and its next sequence step falls on that day.
     """
     campaigns = list(_paged("/campaigns"))
     active = [c for c in campaigns if c.get("status") == 1]
-    rates = {c.get("id"): _campaign_rate(c.get("id"), c.get("daily_limit")) for c in active}
+
+    leads_by = {}                       # campaign id -> [leads] (API can't filter, so group here)
+    for L in iter_leads():
+        leads_by.setdefault(L.get("campaign"), []).append(L)
 
     today = dt.date.today()
-    out_days = []
-    for i in range(days):
-        d = today + dt.timedelta(days=i)
-        camps, total = [], 0
-        for c in active:
-            if not _sends_on(c, d):
+    horizon = [today + dt.timedelta(days=i) for i in range(days)]
+    hset = set(horizon)
+    per_day = {d: {} for d in horizon}  # date -> {campaign name: count}
+
+    def add(d, name, n=1):
+        if d in hset and n:
+            per_day[d][name] = per_day[d].get(name, 0) + n
+
+    for c in active:
+        steps = _steps_of(c)
+        nsteps = len(steps)
+        name = c.get("name") or c.get("id")
+        new_leads = 0
+        for L in leads_by.get(c.get("id"), []):
+            if L.get("status") != 1:                 # active only (drops bounced/unsub/completed)
                 continue
-            rate, est = rates[c.get("id")]
-            total += rate
-            camps.append({"name": c.get("name") or c.get("id"), "count": round(rate), "est": est})
+            if _num(L, "email_reply_count", "email_replied_count") > 0:
+                continue                             # replied -> sequence stops
+            cur = _lead_step(L)
+            if cur < 0:
+                new_leads += 1
+                continue
+            nxt = cur + 1
+            if nxt >= nsteps:
+                continue                             # already had the last step
+            lc = _iso_date(_first(L, "timestamp_last_contact"))
+            if not lc:
+                new_leads += 1
+                continue
+            base = dt.date.fromisoformat(lc) + dt.timedelta(days=int(steps[nxt].get("delay") or 0))
+            if base < today:
+                base = today
+            d = _next_send_day(c, base)
+            if d:
+                add(d, name, 1)
+        # never-contacted leads get step 1 on upcoming send days, paced by daily_limit
+        if new_leads:
+            limit = c.get("daily_limit") or new_leads
+            d = _next_send_day(c, today)
+            while new_leads > 0 and d in hset:
+                take = min(limit, new_leads)
+                add(d, name, take)
+                new_leads -= take
+                nd = _next_send_day(c, d + dt.timedelta(days=1))
+                if not nd:
+                    break
+                d = nd
+
+    out_days = []
+    for d in horizon:
+        camps = sorted(({"name": n, "count": ct} for n, ct in per_day[d].items()),
+                       key=lambda x: -x["count"])
         out_days.append({
             "date": d.isoformat(), "label": d.strftime("%a %b %d"),
-            "today": i == 0, "weekend": d.weekday() >= 5,
-            "total": round(total),
-            "campaigns": sorted(camps, key=lambda x: -x["count"]),
+            "today": d == today, "weekend": d.weekday() >= 5,
+            "total": sum(x["count"] for x in camps), "campaigns": camps,
         })
-
     return {
         "days": out_days,
         "active_campaigns": len(active),
         "total_campaigns": len(campaigns),
-        "any_estimated": any(est for _, est in rates.values()),
     }
 
 
