@@ -17,6 +17,7 @@ real lead before trusting a sync.
 import datetime as dt
 import json
 import os
+import statistics as st
 import threading
 import time
 import urllib.error
@@ -163,61 +164,56 @@ def _sends_on(campaign, d):
     return False
 
 
-def sending_forecast(days=6):
-    """Estimated outreach emails per day for today + (days-1) ahead.
+def _campaign_rate(cid, daily_limit):
+    """A campaign's typical emails/day, from its recent real send history
+    (median of its most recent non-zero sending days). Falls back to the
+    campaign's daily_limit for a brand-new campaign with no history yet.
+    Returns (rate, estimated?)."""
+    try:
+        rows = _request("GET", "/campaigns/analytics/daily", params={"campaign_id": cid})
+    except Exception:
+        rows = None
+    sends = sorted(((r.get("date"), r.get("sent") or 0) for r in (rows or []) if r.get("date")),
+                   reverse=True)
+    recent = [s for _, s in sends if s > 0][:8]
+    if recent:
+        return st.median(recent), False
+    return (daily_limit or 0), True
 
-    A campaign contributes its daily_limit on days its schedule sends; each
-    mailbox is then capped at its own daily_limit (the hard ceiling on all sends
-    from that inbox), so campaigns sharing an inbox compete rather than stack.
+
+def sending_forecast(days=6):
+    """Projected outreach emails per day for today + (days-1) ahead.
+
+    Each active campaign contributes its recent real daily send rate on the days
+    its schedule sends; the per-day total is just the sum across campaigns.
     """
     campaigns = list(_paged("/campaigns"))
-    accounts = {}
-    for a in _paged("/accounts"):
-        em = a.get("email")
-        if em:
-            accounts[em] = {"limit": a.get("daily_limit") or 0, "active": a.get("status") == 1}
     active = [c for c in campaigns if c.get("status") == 1]
+    rates = {c.get("id"): _campaign_rate(c.get("id"), c.get("daily_limit")) for c in active}
 
     today = dt.date.today()
     out_days = []
     for i in range(days):
         d = today + dt.timedelta(days=i)
-        load, camps = {}, []
+        camps, total = [], 0
         for c in active:
             if not _sends_on(c, d):
                 continue
-            limit = c.get("daily_limit") or 0
-            mbs = _emails_of(c)
-            camps.append({"name": c.get("name") or c.get("id"), "count": limit,
-                          "mailbox": mbs[0] if mbs else None})
-            for m in (mbs or [None]):
-                load[m] = load.get(m, 0) + limit / len(mbs or [None])
-        mailboxes, total = [], 0
-        for m, want in sorted(load.items(), key=lambda kv: str(kv[0])):
-            acct = accounts.get(m)
-            cap = acct["limit"] if acct else None
-            paused = bool(acct) and not acct["active"]
-            sent = 0 if paused else (min(want, cap) if cap is not None else want)
-            total += sent
-            mailboxes.append({
-                "email": m or "(unknown mailbox)", "count": round(sent),
-                "want": round(want), "limit": cap,
-                "over": cap is not None and want > cap, "paused": paused,
-            })
+            rate, est = rates[c.get("id")]
+            total += rate
+            camps.append({"name": c.get("name") or c.get("id"), "count": round(rate), "est": est})
         out_days.append({
             "date": d.isoformat(), "label": d.strftime("%a %b %d"),
             "today": i == 0, "weekend": d.weekday() >= 5,
             "total": round(total),
             "campaigns": sorted(camps, key=lambda x: -x["count"]),
-            "mailboxes": mailboxes,
         })
 
     return {
         "days": out_days,
         "active_campaigns": len(active),
         "total_campaigns": len(campaigns),
-        "mailboxes": sum(1 for a in accounts.values() if a["active"]),
-        "capacity": sum(a["limit"] for a in accounts.values() if a["active"]),
+        "any_estimated": any(est for _, est in rates.values()),
     }
 
 

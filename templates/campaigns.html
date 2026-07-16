@@ -15,19 +15,18 @@
 .brow { display:flex; gap:8px; font-size:12px; justify-content:space-between; }
 .brow span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink-2); }
 .brow .num { font-variant-numeric:tabular-nums; color:var(--ink); font-weight:600; }
+.est { color:var(--muted); font-weight:400; }
 .dnone { font-size:12.5px; color:var(--muted); border-top:1px solid var(--grid); padding-top:8px; }
-.warn { margin-top:8px; font-size:11.5px; color:var(--bad); line-height:1.35; }
 {% endblock %}
 
 {% block content %}
 <div class="card">
   <h2>Campaigns — sending forecast</h2>
-  <p class="sub">Estimated <b>outreach emails per day</b> across your active Instantly campaigns for today and the next five days. Built from each campaign's schedule (days &amp; timezone) and daily limit, then <b>capped by each mailbox's daily limit</b> — so campaigns sharing an inbox compete for its slots instead of stacking. Check here before launching a campaign so you don't overload a day.</p>
+  <p class="sub">Projected <b>emails per day</b> across your active Instantly campaigns for today and the next five days. Each campaign's number is its <b>recent real send rate</b> (from its own history), summed per day and shown only on the days its schedule sends.</p>
   {% if configured and data %}
   <div class="pills">
     <span><b>{{ data.active_campaigns }}</b> active campaigns</span>
-    <span><b>{{ data.mailboxes }}</b> sending mailboxes</span>
-    <span><b>{{ data.capacity }}</b> emails/day max capacity</span>
+    {% if data.days %}<span><b>{{ data.days[0].total }}</b> projected today</span>{% endif %}
   </div>
   {% endif %}
 </div>
@@ -42,16 +41,13 @@
   <div class="day {{ 'today' if day.today }} {{ 'weekend' if day.weekend }}">
     <div class="dlabel">{{ 'TODAY · ' if day.today }}{{ day.label }}</div>
     <div class="dcount">{{ day.total }}</div>
-    <div class="dunit">email{{ '' if day.total == 1 else 's' }} scheduled</div>
+    <div class="dunit">email{{ '' if day.total == 1 else 's' }} projected</div>
     {% if day.campaigns %}
     <div class="dbreak">
       {% for c in day.campaigns %}
-      <div class="brow"><span title="{{ c.name }}">{{ c.name }}</span><span class="num">{{ c.count }}</span></div>
+      <div class="brow"><span title="{{ c.name }}">{{ c.name }}</span><span class="num">{{ c.count }}{% if c.est %}<span class="est"> ~</span>{% endif %}</span></div>
       {% endfor %}
     </div>
-    {% for m in day.mailboxes if m.over or m.paused %}
-      <div class="warn">⚠ {{ m.email }}: {{ m.want }} queued but capped at {{ m.limit }}{{ ' — mailbox paused' if m.paused }}. Campaigns on it are splitting the slot.</div>
-    {% endfor %}
     {% else %}
     <div class="dnone">Nothing scheduled{{ ' (weekend)' if day.weekend }}.</div>
     {% endif %}
@@ -59,7 +55,7 @@
   {% endfor %}
 </div>
 <div class="card" style="margin-top:20px">
-  <p class="sub" style="margin:0">The daily number is a <b>ceiling</b>: it assumes each active campaign still has leads to send. A campaign that's run out of leads will send fewer. Warmup emails (separate from outreach) aren't counted. Timezone edge cases near midnight can shift a campaign between two calendar days.</p>
+  <p class="sub" style="margin:0">Numbers are projections from each campaign's recent send rate, so they track how your campaigns actually send (leads run down, follow-ups taper). {% if data.any_estimated %}A <b>~</b> marks a brand-new campaign with no history yet — estimated from its daily limit until it has real data. {% endif %}A campaign nearing the end of its leads will taper below its recent rate.</p>
 </div>
 {% endif %}
 {% endblock %}
