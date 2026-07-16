@@ -453,6 +453,37 @@ document.querySelectorAll('table[data-sheet]').forEach(function (table) {
     if (cell.dataset.sel) ctrl.addEventListener('change', () => ctrl.blur());
   });
 });
+
+// AJAX pagination: a pager link (or the rows-per-page control) inside a
+// [data-page] block swaps just that block's contents instead of reloading the
+// whole page. The block in the fetched response is matched by its data-page key.
+(function () {
+  async function swap(root, href) {
+    root.style.opacity = '0.5';
+    try {
+      const html = await (await fetch(href, { headers: { 'X-Requested-With': 'fetch' } })).text();
+      const fresh = new DOMParser().parseFromString(html, 'text/html')
+        .querySelector('[data-page="' + root.dataset.page + '"]');
+      if (fresh) { root.innerHTML = fresh.innerHTML; history.pushState({}, '', href); }
+    } catch (_) { location.href = href; } finally { root.style.opacity = ''; }
+  }
+  document.addEventListener('click', function (e) {
+    const a = e.target.closest('[data-page] .pager a');
+    if (!a || !a.getAttribute('href')) return;
+    e.preventDefault();
+    swap(a.closest('[data-page]'), a.getAttribute('href'));
+  });
+  document.addEventListener('submit', function (e) {
+    const form = e.target;
+    if ((form.getAttribute('method') || '').toLowerCase() !== 'get') return;
+    const key = form.dataset.pageTarget;
+    const root = key ? document.querySelector('[data-page="' + key + '"]') : form.closest('[data-page]');
+    if (!root) return;
+    e.preventDefault();
+    swap(root, location.pathname + '?' + new URLSearchParams(new FormData(form)).toString());
+  });
+  window.addEventListener('popstate', function () { location.reload(); });
+})();
 </script>
 </body>
 </html>
