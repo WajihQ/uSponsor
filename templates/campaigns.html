@@ -28,7 +28,8 @@
     <span><b>{{ data.active_campaigns }}</b> active campaigns</span>
     {% if data.days %}<span><b>{{ data.days[0].total }}</b> today</span>{% endif %}
     <span class="spacer" style="flex:1"></span>
-    <span>as of {{ data.generated_at }} · <a href="{{ url_for('campaigns_page') }}">↻ refresh</a></span>
+    <span style="color:var(--muted)">as of {{ data.generated_at }}</span>
+    <a class="btn" href="{{ url_for('campaigns_page') }}" style="padding:6px 14px; font-weight:600">↻ Refresh</a>
   </div>
   {% endif %}
 </div>
