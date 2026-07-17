@@ -31,11 +31,7 @@
     <span style="color:var(--muted)">as of {{ data.generated_at }}</span>
     <a class="btn" href="{{ url_for('campaigns_page') }}" style="padding:6px 14px; font-weight:600">↻ Refresh</a>
   </div>
-  {% if data.reconciled %}
-  <p class="sub" style="margin:10px 0 0">Today reflects Instantly's <b>actual sends</b>. What Instantly reports sent so far today:
-    {% for name, n in data.sent_today | dictsort %}<span style="white-space:nowrap">{{ name }} <b style="color:{{ 'var(--good)' if n else 'var(--muted)' }}">{{ n }}</b>{{ ',&nbsp; ' | safe if not loop.last }}</span>{% endfor %}.
-    If a campaign shows <b>0</b> here, it has been rolled forward; if it shows a number, Instantly is counting those as sent today.</p>
-  {% else %}
+  {% if not data.reconciled %}
   <p class="flash err" style="margin:10px 0 0">⚠ Couldn't reach Instantly's analytics — today is <b>projected</b>, not reconciled against actual sends, so it may over-count throttled campaigns.</p>
   {% endif %}
   {% endif %}
