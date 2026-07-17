@@ -22,7 +22,7 @@
 {% block content %}
 <div class="card">
   <h2>Campaigns — sending forecast</h2>
-  <p class="sub">Projected <b>emails per day</b> across your active Instantly campaigns for today and the next five days. Counts only <b>live</b> leads (bounced, unsubscribed, replied and completed excluded), places each on the day its next step is due, then <b>caps each day at your mailbox/campaign daily limits</b> — overflow staggers to the next day, like Instantly does.</p>
+  <p class="sub">Projected <b>emails per day</b> across your active Instantly campaigns for today and the next five days, in each campaign's own sending timezone. Counts only <b>live</b> leads (bounced/unsubscribed/replied/completed excluded), on the day their next step is due; if a day's send window has already closed and it hasn't gone out, it rolls to the next scheduled day. Then <b>capped at your mailbox/campaign daily limits</b>, overflow staggering forward — like Instantly does.</p>
   {% if configured and data %}
   <div class="pills">
     <span><b>{{ data.active_campaigns }}</b> active campaigns</span>
@@ -31,9 +31,6 @@
     <span style="color:var(--muted)">as of {{ data.generated_at }}</span>
     <a class="btn" href="{{ url_for('campaigns_page') }}" style="padding:6px 14px; font-weight:600">↻ Refresh</a>
   </div>
-  {% if not data.reconciled %}
-  <p class="flash err" style="margin:10px 0 0">⚠ Couldn't reach Instantly's analytics — today is <b>projected</b>, not reconciled against actual sends, so it may over-count throttled campaigns.</p>
-  {% endif %}
   {% endif %}
 </div>
 
@@ -61,7 +58,7 @@
   {% endfor %}
 </div>
 <div class="card" style="margin-top:20px">
-  <p class="sub" style="margin:0"><b>Today</b> shows what Instantly has <b>actually sent so far</b> (from its own analytics); anything that was due today but hasn't gone out is treated as backlog and <b>rolled to the next scheduled day</b>. <b>Future days</b> project the live leads whose next step is due (last-contacted + the step's delay, moved to the next sending day), capped at your mailbox/campaign daily limits, with overflow cascading forward. Bounced/unsubscribed/replied/finished leads are excluded. Recomputed live each load/refresh — so if a day's sends get throttled, reload and the leftovers shift forward on their own.</p>
+  <p class="sub" style="margin:0">Send days are computed in each campaign's schedule timezone (Instantly stamps sends in UTC, so a late-evening send lands on the next UTC day — reading that raw would mis-place it by a day). A step is placed on the day it's due (last-contacted + the step's delay, in that timezone, moved to the next scheduled day); if today's send window has already closed and it hasn't gone out, it rolls forward. Days are capped at your mailbox/campaign daily limits with overflow cascading forward. Recomputed live on each load/refresh.</p>
 </div>
 {% endif %}
 {% endblock %}

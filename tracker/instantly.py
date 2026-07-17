@@ -19,6 +19,7 @@ import json
 import os
 import threading
 import time
+from zoneinfo import ZoneInfo
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -192,6 +193,35 @@ def _next_send_day(campaign, base, limit=21):
     return None
 
 
+def _sched(campaign):
+    """(timezone, window-end 'HH:MM') from a campaign's first schedule block."""
+    s = ((campaign.get("campaign_schedule") or {}).get("schedules") or [{}])[0]
+    try:
+        tz = ZoneInfo(s.get("timezone") or "UTC")
+    except Exception:
+        tz = dt.timezone.utc
+    return tz, (s.get("timing") or {}).get("to") or "23:59"
+
+
+def _window_over(now_dt, win_to):
+    """Has today's send window already closed? Compares time-of-day only."""
+    return now_dt.strftime("%H:%M") > (win_to or "23:59")
+
+
+def _to_tz_date(iso, tz):
+    """A UTC ISO timestamp (…Z) -> calendar date in tz. Instantly stamps sends in
+    UTC, so a 9pm-Detroit send is 1am-UTC next day; bucket in the campaign's tz."""
+    if not iso:
+        return None
+    try:
+        d = dt.datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=dt.timezone.utc)
+    return d.astimezone(tz).date()
+
+
 def _distribute(cap, want):
     """Share `cap` sends across campaigns proportional to their want (dict
     id->want). Returns id->sent ints summing to min(cap, total want)."""
@@ -225,56 +255,52 @@ def sending_forecast(days=6):
     for L in iter_leads():
         leads_by.setdefault(L.get("campaign"), []).append(L)
 
-    today = dt.date.today()
+    ref_tz = _sched(active[0])[0] if active else dt.timezone.utc
+    today = dt.datetime.now(ref_tz).date()
     horizon = [today + dt.timedelta(days=i) for i in range(days)]
     hset = set(horizon)
 
-    # what Instantly has ACTUALLY sent today, per campaign (ground truth for today)
-    sent_today, analytics_ok = {}, set()
-    for c in active:
-        cid = c.get("id")
-        try:
-            rows = _request("GET", "/campaigns/analytics/daily", params={"campaign_id": cid})
-            analytics_ok.add(cid)
-            sent_today[cid] = next((r.get("sent") or 0 for r in (rows or [])
-                                    if r.get("date") == today.isoformat()), 0)
-        except Exception:
-            pass
-
-    # ---- 1. demand: leads due per (campaign, day), uncapped ----
+    # ---- 1. demand: leads due per (campaign, day), bucketed in the campaign's tz ----
     due = {c.get("id"): {d: 0 for d in horizon} for c in active}
     for c in active:
         cid = c.get("id")
+        tz, win_to = _sched(c)
+        now_c = dt.datetime.now(tz)
+        today_c = now_c.date()
+        window_over = _window_over(now_c, win_to)            # today's send window already closed?
         steps, nsteps = _steps_of(c), len(_steps_of(c))
         new_leads = 0
-        def bump(d, n=1):
+        def bump(d, n=1, _cid=cid):
             if d in hset:
-                due[cid][d] = due[cid].get(d, 0) + n
+                due[_cid][d] = due[_cid].get(d, 0) + n
         for L in leads_by.get(cid, []):
             if L.get("status") != 1:
                 continue
             if _num(L, "email_reply_count", "email_replied_count") > 0:
                 continue
             cur = _lead_step(L)
-            lc = _iso_date(_first(L, "timestamp_last_contact"))
-            if cur < 0 or not lc:
+            lcd = _to_tz_date(_first(L, "timestamp_last_contact"), tz)
+            if cur < 0 or not lcd:
                 new_leads += 1
                 continue
-            d = dt.date.fromisoformat(lc)
-            bump(d)                                          # step sent on last_contact (counts if today)
-            step = cur
+            bump(lcd)                                        # step sent on last_contact (counts if today)
+            step, d = cur, lcd
             while step + 1 < nsteps:
                 delay = int(steps[step].get("delay") or 0)   # a step's delay is the wait AFTER it
                 step += 1
-                d = _next_send_day(c, max(d + dt.timedelta(days=delay), today))
+                base = d + dt.timedelta(days=delay)
+                if base <= today_c and window_over:
+                    d = _next_send_day(c, today_c + dt.timedelta(days=1))   # window closed -> next day
+                else:
+                    d = _next_send_day(c, max(base, today_c))
                 if d is None or d > horizon[-1]:
                     break
                 bump(d)
-        if new_leads:                                        # never-contacted -> first step upcoming
-            d = _next_send_day(c, today)
-            while new_leads > 0 and d in hset:
-                bump(d, new_leads)                           # per-campaign cap applied below
-                new_leads = 0
+        if new_leads:                                        # never-contacted -> first upcoming step
+            start = today_c + dt.timedelta(days=1) if window_over else today_c
+            nd = _next_send_day(c, start)
+            if nd:
+                bump(nd, new_leads)                          # caps below stagger them across days
 
     # ---- 2. apply mailbox + campaign daily caps, staggering overflow forward ----
     by_mbox = {}                        # mailbox email -> [campaigns]
@@ -294,14 +320,8 @@ def sending_forecast(days=6):
                 want[cid] = min(dm, c.get("daily_limit") or dm)   # a campaign can't exceed its own limit
             if sum(demand.values()) == 0:
                 continue
-            if d == today:
-                # anchor today to what actually went out; anything due-but-unsent
-                # becomes backlog that rolls to the next day
-                sent = {cid: (min(sent_today.get(cid, 0), demand[cid]) if cid in analytics_ok else want[cid])
-                        for cid in demand}
-            else:
-                cap = sum(want.values()) if mlimit is None else min(sum(want.values()), mlimit)
-                sent = _distribute(cap, {k: v for k, v in want.items() if v})
+            cap = sum(want.values()) if mlimit is None else min(sum(want.values()), mlimit)
+            sent = _distribute(cap, {k: v for k, v in want.items() if v})
             for c in camps:
                 cid = c.get("id")
                 s = sent.get(cid, 0)
@@ -325,10 +345,7 @@ def sending_forecast(days=6):
         "days": out_days,
         "active_campaigns": len(active),
         "total_campaigns": len(campaigns),
-        "reconciled": len(analytics_ok),           # campaigns whose today = Instantly's actual sends
-        "sent_today": {(c.get("name") or c.get("id")): sent_today.get(c.get("id"))
-                       for c in active if c.get("id") in analytics_ok},
-        "generated_at": dt.datetime.now().strftime("%b %d, %H:%M"),
+        "generated_at": dt.datetime.now(ref_tz).strftime("%b %d, %H:%M %Z"),
     }
 
 
