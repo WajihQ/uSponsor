@@ -229,6 +229,18 @@ def sending_forecast(days=6):
     horizon = [today + dt.timedelta(days=i) for i in range(days)]
     hset = set(horizon)
 
+    # what Instantly has ACTUALLY sent today, per campaign (ground truth for today)
+    sent_today, analytics_ok = {}, set()
+    for c in active:
+        cid = c.get("id")
+        try:
+            rows = _request("GET", "/campaigns/analytics/daily", params={"campaign_id": cid})
+            analytics_ok.add(cid)
+            sent_today[cid] = next((r.get("sent") or 0 for r in (rows or [])
+                                    if r.get("date") == today.isoformat()), 0)
+        except Exception:
+            pass
+
     # ---- 1. demand: leads due per (campaign, day), uncapped ----
     due = {c.get("id"): {d: 0 for d in horizon} for c in active}
     for c in active:
@@ -280,11 +292,16 @@ def sending_forecast(days=6):
                 dm = (due[cid][d] + carry[cid]) if _sends_on(c, d) else 0
                 demand[cid] = dm
                 want[cid] = min(dm, c.get("daily_limit") or dm)   # a campaign can't exceed its own limit
-            twant = sum(want.values())
-            if twant == 0:
+            if sum(demand.values()) == 0:
                 continue
-            cap = twant if mlimit is None else min(twant, mlimit)
-            sent = _distribute(cap, {k: v for k, v in want.items() if v})
+            if d == today:
+                # anchor today to what actually went out; anything due-but-unsent
+                # becomes backlog that rolls to the next day
+                sent = {cid: (min(sent_today.get(cid, 0), demand[cid]) if cid in analytics_ok else want[cid])
+                        for cid in demand}
+            else:
+                cap = sum(want.values()) if mlimit is None else min(sum(want.values()), mlimit)
+                sent = _distribute(cap, {k: v for k, v in want.items() if v})
             for c in camps:
                 cid = c.get("id")
                 s = sent.get(cid, 0)

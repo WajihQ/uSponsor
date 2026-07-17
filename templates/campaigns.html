@@ -43,7 +43,7 @@
   <div class="day {{ 'today' if day.today }} {{ 'weekend' if day.weekend }}">
     <div class="dlabel">{{ 'TODAY · ' if day.today }}{{ day.label }}</div>
     <div class="dcount">{{ day.total }}</div>
-    <div class="dunit">email{{ '' if day.total == 1 else 's' }} projected{% if day.capped %} · <span title="More leads were due than your daily limit allows; the rest stagger to later days." style="color:var(--accent)">capped</span>{% endif %}</div>
+    <div class="dunit">{{ 'sent so far today' if day.today else 'emails projected' }}{% if day.capped %} · <span title="More leads were due than actually sent / than your daily limit allows; the rest roll to later days." style="color:var(--accent)">rolled over</span>{% endif %}</div>
     {% if day.campaigns %}
     <div class="dbreak">
       {% for c in day.campaigns %}
@@ -57,7 +57,7 @@
   {% endfor %}
 </div>
 <div class="card" style="margin-top:20px">
-  <p class="sub" style="margin:0">Each number is the live leads whose next step is due that day (next step = last-contacted + the step's delay, moved to the next scheduled sending day), then capped at your mailbox and campaign daily limits — a <b>capped</b> day means more was due than your limit allows and the overflow moved to later days. Bounced/unsubscribed/replied/finished leads are excluded. Recomputed live each time you load or refresh. One caveat: Instantly can throttle a mailbox <i>below</i> its configured limit based on health/warmup, and that reduction isn't exposed by the API — so a heavy day may still come in a bit under this.</p>
+  <p class="sub" style="margin:0"><b>Today</b> shows what Instantly has <b>actually sent so far</b> (from its own analytics); anything that was due today but hasn't gone out is treated as backlog and <b>rolled to the next scheduled day</b>. <b>Future days</b> project the live leads whose next step is due (last-contacted + the step's delay, moved to the next sending day), capped at your mailbox/campaign daily limits, with overflow cascading forward. Bounced/unsubscribed/replied/finished leads are excluded. Recomputed live each load/refresh — so if a day's sends get throttled, reload and the leftovers shift forward on their own.</p>
 </div>
 {% endif %}
 {% endblock %}
