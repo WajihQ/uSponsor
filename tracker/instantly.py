@@ -192,14 +192,34 @@ def _next_send_day(campaign, base, limit=21):
     return None
 
 
+def _distribute(cap, want):
+    """Share `cap` sends across campaigns proportional to their want (dict
+    id->want). Returns id->sent ints summing to min(cap, total want)."""
+    total = sum(want.values())
+    if total <= cap:
+        return dict(want)
+    out = {k: v * cap // total for k, v in want.items()}          # floors
+    rem = cap - sum(out.values())
+    for k in sorted(want, key=lambda k: -((want[k] * cap) % total))[:rem]:
+        out[k] += 1
+    return out
+
+
 def sending_forecast(days=6):
     """Projected emails per day for today + (days-1) ahead, from the live lead
-    pipeline. A lead counts toward a day only if it's ACTIVE (Instantly
-    status == 1 — excludes bounced/unsubscribed = negative status, and completed
-    = status 3), hasn't replied, and its next sequence step falls on that day.
+    pipeline, then capped by real daily sending limits.
+
+    A lead counts as *demand* on a day only if it's ACTIVE (status == 1; negative
+    = bounced/unsubscribed, 3 = completed), hasn't replied, and its next sequence
+    step is due that day. Demand is then capped per mailbox at the mailbox's
+    daily_limit and per campaign at the campaign's daily_limit; anything over the
+    cap staggers to the next scheduled day (this is what Instantly actually does,
+    so the number tracks what really goes out, not just what's due).
     """
     campaigns = list(_paged("/campaigns"))
     active = [c for c in campaigns if c.get("status") == 1]
+    accounts = {a["email"]: (a.get("daily_limit") or 0)
+                for a in _paged("/accounts") if a.get("email")}
 
     leads_by = {}                       # campaign id -> [leads] (API can't filter, so group here)
     for L in iter_leads():
@@ -208,49 +228,72 @@ def sending_forecast(days=6):
     today = dt.date.today()
     horizon = [today + dt.timedelta(days=i) for i in range(days)]
     hset = set(horizon)
-    per_day = {d: {} for d in horizon}  # date -> {campaign name: count}
 
-    def add(d, name, n=1):
-        if d in hset and n:
-            per_day[d][name] = per_day[d].get(name, 0) + n
-
+    # ---- 1. demand: leads due per (campaign, day), uncapped ----
+    due = {c.get("id"): {d: 0 for d in horizon} for c in active}
     for c in active:
-        steps = _steps_of(c)
-        nsteps = len(steps)
-        name = c.get("name") or c.get("id")
+        cid = c.get("id")
+        steps, nsteps = _steps_of(c), len(_steps_of(c))
         new_leads = 0
-        for L in leads_by.get(c.get("id"), []):
-            if L.get("status") != 1:                 # active only (drops bounced/unsub/completed)
+        def bump(d, n=1):
+            if d in hset:
+                due[cid][d] = due[cid].get(d, 0) + n
+        for L in leads_by.get(cid, []):
+            if L.get("status") != 1:
                 continue
             if _num(L, "email_reply_count", "email_replied_count") > 0:
-                continue                             # replied -> sequence stops
+                continue
             cur = _lead_step(L)
             lc = _iso_date(_first(L, "timestamp_last_contact"))
             if cur < 0 or not lc:
-                new_leads += 1                       # never sent yet -> paced below
+                new_leads += 1
                 continue
             d = dt.date.fromisoformat(lc)
-            add(d, name, 1)                          # the step just sent on last_contact (counts if today)
+            bump(d)                                          # step sent on last_contact (counts if today)
             step = cur
-            while step + 1 < nsteps:                 # then chain every remaining step forward
+            while step + 1 < nsteps:
                 delay = int(steps[step].get("delay") or 0)   # a step's delay is the wait AFTER it
                 step += 1
                 d = _next_send_day(c, max(d + dt.timedelta(days=delay), today))
                 if d is None or d > horizon[-1]:
                     break
-                add(d, name, 1)
-        # never-contacted leads get step 1 on upcoming send days, paced by daily_limit
-        if new_leads:
-            limit = c.get("daily_limit") or new_leads
+                bump(d)
+        if new_leads:                                        # never-contacted -> first step upcoming
             d = _next_send_day(c, today)
             while new_leads > 0 and d in hset:
-                take = min(limit, new_leads)
-                add(d, name, take)
-                new_leads -= take
-                nd = _next_send_day(c, d + dt.timedelta(days=1))
-                if not nd:
-                    break
-                d = nd
+                bump(d, new_leads)                           # per-campaign cap applied below
+                new_leads = 0
+
+    # ---- 2. apply mailbox + campaign daily caps, staggering overflow forward ----
+    by_mbox = {}                        # mailbox email -> [campaigns]
+    for c in active:
+        by_mbox.setdefault((_emails_of(c) or [None])[0], []).append(c)
+    per_day = {d: {} for d in horizon}
+    capped = set()
+    for mb, camps in by_mbox.items():
+        mlimit = accounts.get(mb)                            # None -> unknown mailbox, no cap
+        carry = {c.get("id"): 0 for c in camps}
+        for d in horizon:
+            want, demand = {}, {}
+            for c in camps:
+                cid = c.get("id")
+                dm = (due[cid][d] + carry[cid]) if _sends_on(c, d) else 0
+                demand[cid] = dm
+                want[cid] = min(dm, c.get("daily_limit") or dm)   # a campaign can't exceed its own limit
+            twant = sum(want.values())
+            if twant == 0:
+                continue
+            cap = twant if mlimit is None else min(twant, mlimit)
+            sent = _distribute(cap, {k: v for k, v in want.items() if v})
+            for c in camps:
+                cid = c.get("id")
+                s = sent.get(cid, 0)
+                carry[cid] = demand[cid] - s                 # unsent leads wait for the next day
+                if s:
+                    nm = c.get("name") or cid
+                    per_day[d][nm] = per_day[d].get(nm, 0) + s
+            if sum(demand.values()) > sum(sent.values()):
+                capped.add(d)
 
     out_days = []
     for d in horizon:
@@ -258,13 +301,14 @@ def sending_forecast(days=6):
                        key=lambda x: -x["count"])
         out_days.append({
             "date": d.isoformat(), "label": d.strftime("%a %b %d"),
-            "today": d == today, "weekend": d.weekday() >= 5,
+            "today": d == today, "weekend": d.weekday() >= 5, "capped": d in capped,
             "total": sum(x["count"] for x in camps), "campaigns": camps,
         })
     return {
         "days": out_days,
         "active_campaigns": len(active),
         "total_campaigns": len(campaigns),
+        "generated_at": dt.datetime.now().strftime("%b %d, %H:%M"),
     }
 
 

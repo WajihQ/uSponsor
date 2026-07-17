@@ -22,11 +22,13 @@
 {% block content %}
 <div class="card">
   <h2>Campaigns — sending forecast</h2>
-  <p class="sub">Projected <b>emails per day</b> across your active Instantly campaigns for today and the next five days. Counts only <b>live</b> leads (bounced, unsubscribed, replied and completed leads are excluded) and places each on the day its next sequence step is actually due.</p>
+  <p class="sub">Projected <b>emails per day</b> across your active Instantly campaigns for today and the next five days. Counts only <b>live</b> leads (bounced, unsubscribed, replied and completed excluded), places each on the day its next step is due, then <b>caps each day at your mailbox/campaign daily limits</b> — overflow staggers to the next day, like Instantly does.</p>
   {% if configured and data %}
   <div class="pills">
     <span><b>{{ data.active_campaigns }}</b> active campaigns</span>
-    {% if data.days %}<span><b>{{ data.days[0].total }}</b> projected today</span>{% endif %}
+    {% if data.days %}<span><b>{{ data.days[0].total }}</b> today</span>{% endif %}
+    <span class="spacer" style="flex:1"></span>
+    <span>as of {{ data.generated_at }} · <a href="{{ url_for('campaigns_page') }}">↻ refresh</a></span>
   </div>
   {% endif %}
 </div>
@@ -41,7 +43,7 @@
   <div class="day {{ 'today' if day.today }} {{ 'weekend' if day.weekend }}">
     <div class="dlabel">{{ 'TODAY · ' if day.today }}{{ day.label }}</div>
     <div class="dcount">{{ day.total }}</div>
-    <div class="dunit">email{{ '' if day.total == 1 else 's' }} projected</div>
+    <div class="dunit">email{{ '' if day.total == 1 else 's' }} projected{% if day.capped %} · <span title="More leads were due than your daily limit allows; the rest stagger to later days." style="color:var(--accent)">capped</span>{% endif %}</div>
     {% if day.campaigns %}
     <div class="dbreak">
       {% for c in day.campaigns %}
@@ -55,7 +57,7 @@
   {% endfor %}
 </div>
 <div class="card" style="margin-top:20px">
-  <p class="sub" style="margin:0">Each number counts the live leads whose next sequence step falls due that day (next step date = last-contacted + the step's delay, moved to the campaign's next scheduled sending day). Bounced, unsubscribed, replied and finished leads don't count — so this reflects who's actually still getting emails. Never-contacted leads are paced onto upcoming days at the campaign's daily limit.</p>
+  <p class="sub" style="margin:0">Each number is the live leads whose next step is due that day (next step = last-contacted + the step's delay, moved to the next scheduled sending day), then capped at your mailbox and campaign daily limits — a <b>capped</b> day means more was due than your limit allows and the overflow moved to later days. Bounced/unsubscribed/replied/finished leads are excluded. Recomputed live each time you load or refresh. One caveat: Instantly can throttle a mailbox <i>below</i> its configured limit based on health/warmup, and that reduction isn't exposed by the API — so a heavy day may still come in a bit under this.</p>
 </div>
 {% endif %}
 {% endblock %}
