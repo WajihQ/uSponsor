@@ -325,6 +325,9 @@ def sending_forecast(days=6):
         "days": out_days,
         "active_campaigns": len(active),
         "total_campaigns": len(campaigns),
+        "reconciled": len(analytics_ok),           # campaigns whose today = Instantly's actual sends
+        "sent_today": {(c.get("name") or c.get("id")): sent_today.get(c.get("id"))
+                       for c in active if c.get("id") in analytics_ok},
         "generated_at": dt.datetime.now().strftime("%b %d, %H:%M"),
     }
 
