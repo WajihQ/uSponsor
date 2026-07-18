@@ -261,16 +261,23 @@ def scan_channel(conn, ch):
     known = db.known_brand_names(conn)
     aliases = db.alias_map(conn)
 
-    new_videos = new_spons = 0
+    new_videos = new_spons = errors = 0
     for entry in fresh:
         try:
             v = _fetch_video(entry["id"])
-        except Exception as exc:  # video may be private/removed; keep going
+        except Exception as exc:  # video may be private/removed, or YouTube is rate-limiting
             _log(f"  ! skipped {entry['id']}: {exc}")
+            errors += 1
             continue
         stored, n, _ = _store_video(conn, ch, v, known, aliases)
         new_videos += stored
         new_spons += n
+    # had new videos to fetch but every fetch failed (e.g. rate-limited) -> don't
+    # count this as scanned, so the next run retries instead of skipping it for 24h
+    if fresh and errors == len(fresh):
+        conn.execute("UPDATE channels SET last_scanned = NULL WHERE id = ?", (ch["id"],))
+        conn.commit()
+        _log(f"  ! {name}: all {errors} fetch(es) failed — will retry next scan")
     return name, new_videos, new_spons
 
 
