@@ -275,10 +275,13 @@ document.querySelectorAll('table[data-sheet]').forEach(function (table) {
   const cellVal = (row, i) => {
     const c = row.cells[i]; if (!c) return '';
     if (c.dataset.val != null) return c.dataset.val.trim();   // explicit sort/filter key
-    const ed = c.querySelector('input, select, textarea');   // a cell being edited
-    if (ed) return (ed.value || '').trim();
-    const cc = c.querySelector('.c');                         // editable text held in a child span
-    return ((cc ? cc.textContent : c.textContent) || '').trim();
+    const cc = c.querySelector('.c');                         // the cell's editable value
+    if (cc) {                                                 // (ignore other inputs in the cell, e.g. hidden form fields)
+      const ed = cc.querySelector('input, select, textarea'); // that value being edited
+      return ((ed ? ed.value : cc.textContent) || '').trim();
+    }
+    const ed = c.querySelector('input, select, textarea');   // whole-cell input / being edited
+    return ((ed ? ed.value : c.textContent) || '').trim();
   };
   const filters = [];   // each: {i, active():bool, match(cellValue):bool}
   let globalTerm = '';
