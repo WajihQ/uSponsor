@@ -238,6 +238,17 @@ def normalize_channel_url(raw):
     return None
 
 
+def normalize_instagram_url(raw):
+    """Accept an instagram.com profile link (or 'instagram.com/handle').
+    Returns a canonical https URL, or None if it isn't an Instagram link."""
+    s = (raw or "").strip().strip('"').strip("'").rstrip("/")
+    if "instagram.com" not in s.lower():
+        return None
+    if not s.startswith("http"):
+        s = "https://" + s
+    return s
+
+
 _HEADER_COLS = {
     "niche": "niche",
     "subniche": "subniche", "sub-niche": "subniche", "sub niche": "subniche",

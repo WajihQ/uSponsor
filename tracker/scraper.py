@@ -339,7 +339,7 @@ def run_scan(mode="base", years=1, target="all", force=False):
         _log(f"Backfill scan: going back {years} year(s), to {cutoff.isoformat()}")
     conn = db.connect()
     try:
-        where, wargs = [], []
+        where, wargs = ["input_url LIKE '%youtube%'"], []   # skip Instagram-only entries
         if target == "closed":
             where.append("status = 'closed'")
         if mode == "base" and not force:
@@ -353,7 +353,8 @@ def run_scan(mode="base", years=1, target="all", force=False):
             sql += " WHERE " + " AND ".join(where)
         channels = conn.execute(sql + " ORDER BY id", wargs).fetchall()
         total_all = conn.execute(
-            "SELECT COUNT(*) FROM channels" + (" WHERE status = 'closed'" if target == "closed" else "")
+            "SELECT COUNT(*) FROM channels WHERE input_url LIKE '%youtube%'"
+            + (" AND status = 'closed'" if target == "closed" else "")
         ).fetchone()[0]
         skipped = total_all - len(channels)
         if skipped and mode == "base":

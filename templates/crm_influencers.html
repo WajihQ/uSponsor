@@ -17,6 +17,7 @@ textarea.ed { min-width:220px; resize:vertical; line-height:1.35; white-space:pr
   field-sizing:content; max-height:120px; }
 td .meta { color:var(--muted); font-size:12px; margin-top:3px; }
 td.who { min-width:200px; }
+.who .nm { font-weight:600; max-width:200px; }
 .fu { text-align:center; font-variant-numeric:tabular-nums; color:var(--ink-2); }
 tbody.addrow .who input { display:block; margin-bottom:5px; }
 .whoactions { margin-top:6px; display:flex; gap:8px; align-items:center; }
@@ -66,7 +67,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
       <tr>
         <td class="who">
           <form id="addinfl" action="{{ url_for('crm_influencers_add') }}" method="post"></form>
-          <input form="addinfl" name="link" placeholder="channel URL or @handle *" required>
+          <input form="addinfl" name="link" placeholder="YouTube URL/@handle or Instagram link *" required>
           <input form="addinfl" name="name" placeholder="name (optional)">
           <input form="addinfl" name="niche" placeholder="niche">
           <input form="addinfl" name="subniche" placeholder="sub-niche">
@@ -96,8 +97,9 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
     <tbody class="data">
       {% for c in rows %}
       <tr data-id="{{ c.id }}">
-        <td class="who" data-val="{{ c.name or c.input_url }}">
-          <a href="{{ url_for('creator_detail', cid=c.id) }}"><b>{{ c.name or c.input_url }}</b></a>
+        <td class="who">
+          <span class="c nm" data-f="name">{{ c.name or c.input_url }}</span>
+          <a href="{{ url_for('creator_detail', cid=c.id) }}" class="lnopen" title="Open profile">↗</a>
           {% if c.subscribers or c.spons or avg_views.get(c.id) or scanned.get(c.id) %}
           <div class="meta">
             {% if c.subscribers %}{{ '{:,}'.format(c.subscribers) }} subs{% endif %}

@@ -418,16 +418,25 @@ def crm_influencers_import():
 @app.route("/crm/influencers/add", methods=["POST"])
 def crm_influencers_add():
     link = request.form.get("link", "").strip()
-    norm = db.normalize_channel_url(link)
-    if not norm:
-        flash("Enter a valid YouTube channel URL or @handle to add an influencer.", "err")
+    yt = db.normalize_channel_url(link)
+    ig = None if yt else db.normalize_instagram_url(link)   # allow Instagram-only creators
+    if not yt and not ig:
+        flash("Enter a YouTube channel URL / @handle, or an Instagram profile link.", "err")
         return redirect(url_for("crm_influencers"))
-    db.add_channel(link)  # inserts if new, dedups on the normalized URL
     conn = db.connect()
     try:
-        cid = conn.execute("SELECT id FROM channels WHERE input_url = ?", (norm,)).fetchone()["id"]
+        if yt:
+            db.add_channel(link)                            # normalizes to YouTube, dedups
+            input_url = yt
+        else:
+            input_url = ig                                  # IG-only: not scanned, stored as the key
+            if not conn.execute("SELECT 1 FROM channels WHERE input_url = ?", (input_url,)).fetchone():
+                conn.execute("INSERT INTO channels (input_url, instagram) VALUES (?, ?)",
+                             (input_url, input_url))
+                conn.commit()
+        cid = conn.execute("SELECT id FROM channels WHERE input_url = ?", (input_url,)).fetchone()["id"]
         sets, args = [], []
-        for col in _INFL_EDIT:  # everything except the link itself
+        for col in _INFL_EDIT:                              # name/email/etc from the add row
             if request.form.get(col, "").strip():
                 sets.append(f"{col} = ?"); args.append(request.form.get(col).strip()[:400])
         if sets:
