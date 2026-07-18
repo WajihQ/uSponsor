@@ -52,11 +52,62 @@ def _set_current(label):
         STATE["current"] = label
 
 
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def cookie_opts():
+    """yt-dlp cookie options for *authenticated* requests, which get far higher
+    rate limits and dodge the "confirm you're not a bot" wall. In priority order:
+    USPONSOR_COOKIES_FILE, a cookies.txt in the project root, then
+    USPONSOR_COOKIES_BROWSER (e.g. 'chrome' / 'edge' / 'firefox')."""
+    f = os.environ.get("USPONSOR_COOKIES_FILE", "").strip()
+    if f and os.path.isfile(f):
+        return {"cookiefile": f}
+    default = os.path.join(_ROOT, "cookies.txt")
+    if os.path.isfile(default):
+        return {"cookiefile": default}
+    browser = os.environ.get("USPONSOR_COOKIES_BROWSER", "").strip()
+    if browser:
+        return {"cookiesfrombrowser": (browser,)}
+    return {}
+
+
+def cookies_active():
+    """Human-readable description of the cookie source in use, or None."""
+    o = cookie_opts()
+    if "cookiefile" in o:
+        return os.path.basename(o["cookiefile"])
+    if "cookiesfrombrowser" in o:
+        return o["cookiesfrombrowser"][0] + " browser"
+    return None
+
+
 def _ydl(extra=None):
     opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+    opts.update(cookie_opts())
     if extra:
         opts.update(extra)
     return YoutubeDL(opts)
+
+
+_RATE_HINTS = ("sign in to confirm", "not a bot", "http error 429", "too many requests",
+               "rate limit", "rate-limit", "temporarily", "http error 403")
+
+
+def _extract(url, opts=None, tries=4, base_wait=20):
+    """extract_info with retry+backoff on YouTube throttling / bot-check errors."""
+    for attempt in range(tries):
+        try:
+            with _ydl(opts) as y:
+                return y.extract_info(url, download=False)
+        except Exception as exc:
+            throttled = any(h in str(exc).lower() for h in _RATE_HINTS)
+            if throttled and attempt < tries - 1:
+                wait = base_wait * (2 ** attempt)
+                _log(f"  … throttled by YouTube, waiting {wait}s (retry {attempt + 1}/{tries - 1})")
+                time.sleep(wait)
+                continue
+            raise
 
 
 def _list_uploads(channel_url, limit=LOOKBACK_ENTRIES):
@@ -68,8 +119,7 @@ def _list_uploads(channel_url, limit=LOOKBACK_ENTRIES):
     opts = {"extract_flat": "in_playlist"}
     if limit:
         opts["playlistend"] = limit
-    with _ydl(opts) as y:
-        info = y.extract_info(url, download=False)
+    info = _extract(url, opts)
     entries = [e for e in (info.get("entries") or []) if e and e.get("id")]
     name = info.get("channel") or info.get("uploader") or info.get("title") or channel_url
     name = name.removesuffix(" - Videos")
@@ -79,8 +129,8 @@ def _list_uploads(channel_url, limit=LOOKBACK_ENTRIES):
 def _fetch_video(video_id):
     # player_skip: we only need metadata (title/date/description), so skip the
     # stream-resolution work — noticeably faster per video
-    with _ydl({"extractor_args": {"youtube": {"player_skip": ["js", "configs"]}}}) as y:
-        return y.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+    return _extract(f"https://www.youtube.com/watch?v={video_id}",
+                    {"extractor_args": {"youtube": {"player_skip": ["js", "configs"]}}})
 
 
 def _store_video(conn, ch, v, known=(), aliases=None):
@@ -150,8 +200,7 @@ def rerun_detection():
 
 def _fetch_captions_info(video_id):
     """Full extract (no player_skip) so caption tracks are present."""
-    with _ydl() as y:
-        return y.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+    return _extract(f"https://www.youtube.com/watch?v={video_id}")
 
 
 def segment_pass(check_limit=300, caption_limit=40):
@@ -423,7 +472,7 @@ def start_segment_pass_in_background():
 
     def go():
         try:
-            segment_pass(check_limit=1000, caption_limit=100)
+            segment_pass(check_limit=2000, caption_limit=600)
         except Exception as exc:
             _log(f"Sponsor-segment pass failed: {exc}")
         finally:

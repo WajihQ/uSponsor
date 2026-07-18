@@ -396,7 +396,7 @@ def crm_influencers():
         conn.close()
     return render_template(
         "crm_influencers.html", rows=rows, statuses=statuses, counts=counts,
-        avg_views=avg_views, scanned=scanned,
+        avg_views=avg_views, scanned=scanned, cookies=scraper.cookies_active(),
         status_options=_status_options(statuses, _INFL_STATUS_DEFAULTS),
         f_status=f_status, f_revisit=f_revisit, q=q, sort=sort, scan=scraper.STATE,
         gmail=gmail_sync.status(), instantly=instantly.status(),
@@ -446,6 +446,27 @@ def crm_influencers_add():
         conn.close()
     flash("Influencer added.", "ok")
     return redirect(url_for("crm_influencers"))
+
+
+@app.route("/scan/cookies", methods=["POST"])
+def scan_cookies_upload():
+    f = request.files.get("file")
+    if not f or not f.filename:
+        flash("No cookies file selected.", "err")
+        return redirect(request.referrer or url_for("crm_influencers"))
+    dest = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
+    with open(dest, "wb") as out:
+        out.write(f.read())
+    flash("YouTube cookies saved — scans now run authenticated (much higher rate limits).", "ok")
+    return redirect(request.referrer or url_for("crm_influencers"))
+
+
+@app.route("/scan/cookies/clear", methods=["POST"])
+def scan_cookies_clear():
+    dest = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
+    if os.path.isfile(dest):
+        os.remove(dest)
+    return _done("YouTube cookies removed.", endpoint="crm_influencers")
 
 
 @app.route("/crm/influencers/<int:cid>/edit", methods=["POST"])

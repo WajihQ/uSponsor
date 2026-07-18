@@ -158,6 +158,25 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
 </div>
 
 <div class="card">
+  <h2>YouTube scan auth
+    {% if cookies %}<span style="color:var(--good); font-size:13px; font-weight:600">· authenticated ({{ cookies }})</span>
+    {% else %}<span style="color:var(--bad); font-size:13px; font-weight:600">· anonymous — low rate limits</span>{% endif %}
+  </h2>
+  <p class="sub">Scanning many channels anonymously trips YouTube's "confirm you're not a bot" throttle (videos come back empty). Upload your signed-in YouTube <b>cookies.txt</b> once and every scan runs authenticated with far higher limits. Export it with a browser extension like <b>Get cookies.txt LOCALLY</b> while logged in to youtube.com. Stored locally, gitignored.</p>
+  <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+    <form method="post" action="{{ url_for('scan_cookies_upload') }}" enctype="multipart/form-data" style="display:flex; gap:12px; align-items:center">
+      <input type="file" name="file" accept=".txt" required>
+      <button class="primary">{{ 'Replace cookies.txt' if cookies else 'Upload cookies.txt' }}</button>
+    </form>
+    {% if cookies %}
+    <form method="post" action="{{ url_for('scan_cookies_clear') }}" data-ajax="save" data-done="Cookies removed" data-confirm="Remove the saved YouTube cookies? Scans will go back to anonymous.">
+      <button class="danger" type="submit">Remove</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
   <h2>Backfill scan</h2>
   <p class="sub">Pull older uploads for every creator (newest-to-oldest) to deepen sponsor history. Slow — deep backfills over many channels can take a while. Regular <b>Scan now</b> (top-right) keeps things current.</p>
   <form method="post" action="{{ url_for('scan') }}" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
