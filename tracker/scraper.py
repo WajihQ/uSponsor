@@ -55,17 +55,62 @@ def _set_current(label):
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+_cookie_valid_cache = {}  # path -> (mtime, size, valid) — re-checked only when the file changes
+
+
+def _cookiefile_valid(path):
+    """Cheap sanity check on a Netscape-format cookies.txt.
+
+    A bad re-upload or an unclean shutdown mid-write can leave cookies.txt
+    truncated/null-padded (happened 2026-07-21 — 3.7KB of zero bytes); yt-dlp
+    then hard-fails *every* request with a DownloadError instead of just
+    ignoring the file. Checking the shape ourselves lets a corrupt file
+    degrade to unauthenticated scanning (slower, but working) instead of
+    breaking every scan until someone notices and re-uploads.
+    """
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    cached = _cookie_valid_cache.get(path)
+    if cached and (cached[0], cached[1]) == (st.st_mtime, st.st_size):
+        return cached[2]
+    valid = False
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(8192)
+        if head and b"\x00" not in head:
+            lines = [ln for ln in head.split(b"\n") if ln.strip() and not ln.lstrip().startswith(b"#")]
+            valid = any(len(ln.split(b"\t")) >= 6 for ln in lines)
+    except OSError:
+        valid = False
+    was_valid = cached[2] if cached else None
+    _cookie_valid_cache[path] = (st.st_mtime, st.st_size, valid)
+    if was_valid is not False and not valid:
+        _log(f"  ! {os.path.basename(path)} doesn't look like a valid cookies file (corrupt or empty) —"
+             f" scanning unauthenticated until it's replaced (Influencer CRM page → re-upload)")
+    return valid
+
+
+def _cookiefile_path():
+    """Which cookies.txt cookie_opts() would use, ignoring validity."""
+    f = os.environ.get("USPONSOR_COOKIES_FILE", "").strip()
+    if f and os.path.isfile(f):
+        return f
+    default = os.path.join(_ROOT, "cookies.txt")
+    return default if os.path.isfile(default) else None
+
+
 def cookie_opts():
     """yt-dlp cookie options for *authenticated* requests, which get far higher
     rate limits and dodge the "confirm you're not a bot" wall. In priority order:
     USPONSOR_COOKIES_FILE, a cookies.txt in the project root, then
-    USPONSOR_COOKIES_BROWSER (e.g. 'chrome' / 'edge' / 'firefox')."""
-    f = os.environ.get("USPONSOR_COOKIES_FILE", "").strip()
-    if f and os.path.isfile(f):
-        return {"cookiefile": f}
-    default = os.path.join(_ROOT, "cookies.txt")
-    if os.path.isfile(default):
-        return {"cookiefile": default}
+    USPONSOR_COOKIES_BROWSER (e.g. 'chrome' / 'edge' / 'firefox'). A present
+    but corrupt cookie file falls through to the next option (browser, then
+    unauthenticated) rather than raised — see _cookiefile_valid."""
+    path = _cookiefile_path()
+    if path and _cookiefile_valid(path):
+        return {"cookiefile": path}
     browser = os.environ.get("USPONSOR_COOKIES_BROWSER", "").strip()
     if browser:
         return {"cookiesfrombrowser": (browser,)}
@@ -73,13 +118,21 @@ def cookie_opts():
 
 
 def cookies_active():
-    """Human-readable description of the cookie source in use, or None."""
-    o = cookie_opts()
-    if "cookiefile" in o:
-        return os.path.basename(o["cookiefile"])
-    if "cookiesfrombrowser" in o:
-        return o["cookiesfrombrowser"][0] + " browser"
+    """Human-readable description of the cookie source in use, or None if
+    scanning runs unauthenticated (nothing configured, or see cookies_broken())."""
+    path = _cookiefile_path()
+    if path and _cookiefile_valid(path):
+        return os.path.basename(path)
+    browser = os.environ.get("USPONSOR_COOKIES_BROWSER", "").strip()
+    if browser:
+        return browser + " browser"
     return None
+
+
+def cookies_broken():
+    """Basename of a present-but-corrupt cookies.txt, or None."""
+    path = _cookiefile_path()
+    return os.path.basename(path) if path and not _cookiefile_valid(path) else None
 
 
 def _ydl(extra=None):

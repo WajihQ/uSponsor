@@ -260,11 +260,18 @@ def start_sync_in_background(authoritative=False):
 
 
 def start_interval(minutes=30):
-    """Background heartbeat: incremental sync every `minutes` while the app runs."""
+    """Background heartbeat: incremental sync now, then every `minutes` while
+    the app runs. Runs immediately on start (not just after the first sleep)
+    since this app is typically run for short sessions shorter than the
+    interval — without an immediate run, a short session could see zero
+    automatic syncs and last_contacted would look stale until "Sync now" is
+    clicked by hand.
+    """
     if not list_accounts():
         return False
 
     def _loop():
+        sync(authoritative=False)
         while True:
             time.sleep(minutes * 60)
             if not STATE["running"]:

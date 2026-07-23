@@ -397,9 +397,9 @@ def crm_influencers():
     return render_template(
         "crm_influencers.html", rows=rows, statuses=statuses, counts=counts,
         avg_views=avg_views, scanned=scanned, cookies=scraper.cookies_active(),
+        cookies_broken=scraper.cookies_broken(),
         status_options=_status_options(statuses, _INFL_STATUS_DEFAULTS),
         f_status=f_status, f_revisit=f_revisit, q=q, sort=sort, scan=scraper.STATE,
-        gmail=gmail_sync.status(), instantly=instantly.status(),
     )
 
 
@@ -526,7 +526,6 @@ def crm_brands():
         "crm_brands.html", rows=rows, statuses=statuses, niches=niches, counts=counts,
         status_options=_status_options(statuses, _BRAND_STATUS_DEFAULTS),
         f_status=f_status, f_niche=f_niche, q=q, sort=sort, scan=scraper.STATE,
-        gmail=gmail_sync.status(), instantly=instantly.status(),
     )
 
 
@@ -558,6 +557,9 @@ def crm_brands_add():
         conn.execute(
             f"INSERT INTO brand_leads ({', '.join(cols)}) VALUES ({placeholders})", vals
         )
+        brand = request.form.get("brand", "").strip()
+        if brand:
+            db.ensure_known_brand(conn, brand)
         conn.commit()
     finally:
         conn.close()
@@ -577,6 +579,8 @@ def crm_brands_edit(bid):
     conn = db.connect()
     try:
         conn.execute(f"UPDATE brand_leads SET {', '.join(sets)} WHERE id = ?", (*args, bid))
+        if request.form.get("brand", "").strip():
+            db.ensure_known_brand(conn, request.form["brand"].strip())
         conn.commit()
     finally:
         conn.close()
@@ -594,11 +598,19 @@ def crm_brands_delete(bid):
     return _done("Brand lead removed.", endpoint="crm_brands")
 
 
+@app.route("/settings")
+def settings():
+    return render_template(
+        "settings.html", scan=scraper.STATE,
+        gmail=gmail_sync.status(), instantly=instantly.status(),
+    )
+
+
 @app.route("/crm/gmail/sync", methods=["POST"])
 def gmail_sync_now():
     started = gmail_sync.start_sync_in_background(authoritative=False)
     return _done("Gmail sync started." if started else "A sync is already running.",
-                 "ok" if started else "err", endpoint="crm_influencers")
+                 "ok" if started else "err", endpoint="settings")
 
 
 @app.route("/crm/gmail/resync", methods=["POST"])
@@ -606,7 +618,7 @@ def gmail_resync():
     started = gmail_sync.start_sync_in_background(authoritative=True)
     return _done("Full Gmail resync started — reads all sent mail." if started
                  else "A sync is already running.",
-                 "ok" if started else "err", endpoint="crm_influencers")
+                 "ok" if started else "err", endpoint="settings")
 
 
 @app.route("/crm/gmail/status")
@@ -618,7 +630,7 @@ def gmail_status():
 def instantly_sync_now():
     started = instantly.start_sync_in_background()
     return _done("Instantly sync started." if started else "A sync is already running.",
-                 "ok" if started else "err", endpoint="crm_brands")
+                 "ok" if started else "err", endpoint="settings")
 
 
 @app.route("/crm/instantly/status")
@@ -647,6 +659,14 @@ def _pageof(rows, arg, per=50):
     pages = max((len(rows) + per - 1) // per, 1)
     p = min(p, pages)
     return rows[(p - 1) * per : p * per], p, pages
+
+
+def _search(rows, arg, field="name"):
+    """Filter rows to those whose `field` contains the query-string `arg` (case-insensitive)."""
+    term = request.args.get(arg, "").strip().lower()
+    if not term:
+        return rows
+    return [r for r in rows if term in (r[field] or "").lower()]
 
 
 @app.route("/brands")
@@ -710,18 +730,26 @@ def brands():
             {**dict(r), "t": int(json.loads(r["sb_segments"] or "[[0,0]]")[0][0])}
             for r in review
         ]
+        if q := request.args.get("q_alias", "").strip().lower():
+            alias_rows = [
+                a for a in alias_rows
+                if q in a["alias_key"].lower() or q in a["canonical"].lower()
+            ]
     finally:
         conn.close()
     return render_template(
         "brands.html",
-        suggestions=_pageof(suggestions, "p_sug"),
-        known=_pageof(known, "p_known"),
-        erroneous=_pageof(erroneous, "p_err"),
-        boycott=_pageof(boycott, "p_boy"),
-        recent=_pageof(recent, "p_rec", per=25),
-        monthly=_pageof(monthly, "p_mon", per=25),
+        suggestions=_pageof(_search(suggestions, "q_sug"), "p_sug"),
+        known=_pageof(_search(known, "q_known"), "p_known"),
+        erroneous=_pageof(_search(erroneous, "q_err"), "p_err"),
+        boycott=_pageof(_search(boycott, "q_boy"), "p_boy"),
+        recent=_pageof(_search(recent, "q_rec"), "p_rec", per=25),
+        monthly=_pageof(_search(monthly, "q_mon"), "p_mon", per=25),
         alias_rows=alias_rows, review=review,
         page_url=lambda arg, p: url_for("brands", **{**request.args.to_dict(), arg: p}),
+        clear_url=lambda qarg, parg: url_for(
+            "brands", **{k: v for k, v in request.args.to_dict().items() if k not in (qarg, parg)}
+        ),
         scan=scraper.STATE,
     )
 

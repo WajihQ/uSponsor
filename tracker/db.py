@@ -326,6 +326,24 @@ def import_brand_lines(text, kind="known"):
     return added, skipped
 
 
+def ensure_known_brand(conn, name):
+    """Auto-mark a brand 'known' the moment it gets a brand_leads (Brand CRM)
+    row, so it stops showing as a Brands-page suggestion without waiting on
+    the manual checkmark. No-op if the brand_key is already classified
+    (known/erroneous/boycott) — never override a deliberate choice.
+    """
+    from .detector import brand_key
+    name = (name or "").strip()
+    key = brand_key(name)
+    if len(key) < 2:
+        return
+    conn.execute(
+        "INSERT INTO brands (name, brand_key, kind) VALUES (?, ?, 'known')"
+        " ON CONFLICT(brand_key) DO NOTHING",
+        (name, key),
+    )
+
+
 def alias_map(conn):
     """{alias_key: canonical display name} for detection-time consolidation."""
     return {r["alias_key"]: r["canonical"] for r in conn.execute("SELECT * FROM brand_aliases")}
@@ -608,6 +626,8 @@ def import_brand_leads_csv(text):
                     [vals[c] for c in use],
                 )
                 added += 1
+            if f.get("brand"):
+                ensure_known_brand(conn, f["brand"])
     return added, updated, skipped
 
 

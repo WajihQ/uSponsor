@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Settings — uSponsor{% endblock %}
+{% block style %}
+.pills { display:flex; gap:16px; margin:2px 0 0; color:var(--ink-2); font-size:13px; align-items:center; flex-wrap:wrap; }
+.pills b { color:var(--ink); }
+{% endblock %}
+
+{% block content %}
+{% include "_gmail_card.html" %}
+{% include "_instantly_card.html" %}
+{% endblock %}
