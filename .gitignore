@@ -18,3 +18,4 @@ instantly.json
 cookies.txt
 .venv/
 venv/
+.pytest_cache/

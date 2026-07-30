@@ -94,6 +94,9 @@ th.sortable:hover .sortind { color:var(--ink-2); }
 .dfilter1 { width:100%; min-width:104px; font:inherit; font-size:11.5px; padding:3px 4px;
   border:1px solid var(--ring); border-radius:6px; background:var(--page); color:var(--ink);
   font-variant-numeric:tabular-nums; }
+.pager { display:flex; gap:14px; align-items:center; margin-top:10px; font-size:13px; color:var(--ink-2); flex-wrap:wrap; }
+.pager a { font-weight:600; cursor:pointer; }
+.pager .dis { color:var(--muted); }
 /* click-to-edit text cells: compact, size to content, edit on click */
 td.c { max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:text; }
 td.c.c-multi { max-width:260px; white-space:normal; }
@@ -193,8 +196,12 @@ tbody.addrow.hidden { display:none; }        /* collapsed until "+ Add contact" 
     if (!res.ok) { toast('Failed (' + res.status + ') — not saved'); return; }
     const act = f.dataset.ajax, row = f.closest('tr, .shot');
     if (act === 'remove-row' && row) {
+      const sheetTable = row.closest('table[data-sheet]');   // captured now, while row is still attached
       row.classList.add('fading');
-      setTimeout(() => row.remove(), 250);
+      setTimeout(() => {
+        if (sheetTable && sheetTable._sheetForget) sheetTable._sheetForget(row);
+        else row.remove();
+      }, 250);
     } else if (act === 'toggle-status' && row) {
       const inp = f.querySelector('input[name=status]');
       const btn = f.querySelector('button');
@@ -255,7 +262,6 @@ document.querySelectorAll('table[data-sheet]').forEach(function (table) {
   const thead = table.tHead, heads = Array.from(thead.rows[0].cells);
   const body = table.querySelector('tbody.data');
   if (!body) return;
-  const rows = () => Array.from(body.rows);
   // collapse the spreadsheet-style add row behind a button so it isn't
   // a permanent strip of empty boxes above the data
   const addBody = table.querySelector('tbody.addrow');
@@ -284,6 +290,21 @@ document.querySelectorAll('table[data-sheet]').forEach(function (table) {
     const ed = c.querySelector('input, select, textarea');   // whole-cell input / being edited
     return ((ed ? ed.value : c.textContent) || '').trim();
   };
+
+  // Virtualize: pull every row out of the live DOM once, up front, and keep
+  // it as a plain in-memory array. Rendering all of a large CRM table (500+
+  // rows, each with several inline-editable cells) at once meant every
+  // keystroke anywhere on the page paid for a style/layout recalc across the
+  // whole table (Chrome's "Forced reflow" insight — hundreds of ms of input
+  // delay even in an unrelated field). cellVal/querySelector work the same
+  // on a detached node, so filtering and sorting run over this array with no
+  // layout cost, over the *full* dataset — only the current page's ~50 rows
+  // ever get attached to the DOM at a time.
+  const allRows = Array.from(body.rows);
+  const emptyRow = allRows.find(r => !r.dataset.id) || null;   // Jinja's "no rows yet" placeholder, if present
+  const master = allRows.filter(r => r.dataset.id);
+  body.textContent = '';
+
   const filters = [];   // each: {i, active():bool, match(cellValue):bool}
   let globalTerm = '';
   const fRow = thead.insertRow();
@@ -291,7 +312,7 @@ document.querySelectorAll('table[data-sheet]').forEach(function (table) {
   // distinct values for every 'select' column, gathered in one pass
   const selCols = heads.reduce((a, th, i) => (th.dataset.filter === 'select' ? a.concat(i) : a), []);
   const distinct = {}; selCols.forEach(i => distinct[i] = new Set());
-  if (selCols.length) rows().forEach(r => selCols.forEach(i => {
+  if (selCols.length) master.forEach(r => selCols.forEach(i => {
     const v = cellVal(r, i); if (v) distinct[i].add(v);
   }));
 
@@ -313,13 +334,13 @@ document.querySelectorAll('table[data-sheet]').forEach(function (table) {
       const panel = document.createElement('div'); panel.className = 'mfpanel';
       const clr = document.createElement('div'); clr.className = 'mfclear'; clr.textContent = 'Clear';
       clr.addEventListener('click', () => {
-        chosen.clear(); panel.querySelectorAll('input').forEach(c => c.checked = false); relabel(); apply();
+        chosen.clear(); panel.querySelectorAll('input').forEach(c => c.checked = false); relabel(); applyFilter();
       });
       panel.appendChild(clr);
       Array.from(distinct[i]).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())).forEach(v => {
         const lab = document.createElement('label');
         const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = v;
-        cb.addEventListener('change', () => { cb.checked ? chosen.add(v) : chosen.delete(v); relabel(); apply(); });
+        cb.addEventListener('change', () => { cb.checked ? chosen.add(v) : chosen.delete(v); relabel(); applyFilter(); });
         lab.appendChild(cb); lab.appendChild(document.createTextNode(v));
         panel.appendChild(lab);
       });
@@ -335,7 +356,7 @@ document.querySelectorAll('table[data-sheet]').forEach(function (table) {
     } else if (kind === 'date') {                  // show rows dated on or before this date
       const inp = document.createElement('input'); inp.type = 'date'; inp.className = 'dfilter1';
       inp.title = 'show rows dated on or before this date';
-      inp.addEventListener('input', apply);
+      inp.addEventListener('input', applyFilter);
       cell.appendChild(inp);
       filters.push({
         i,
@@ -349,36 +370,107 @@ document.querySelectorAll('table[data-sheet]').forEach(function (table) {
 
     } else {                                       // free-text "contains"
       const inp = document.createElement('input'); inp.className = 'colfilter'; inp.placeholder = 'filter';
-      inp.addEventListener('input', apply);
+      inp.addEventListener('input', applyFilter);
       cell.appendChild(inp);
       filters.push({ i, active: () => inp.value.trim() !== '',
                      match: v => v.toLowerCase().includes(inp.value.trim().toLowerCase()) });
     }
   });
 
-  function apply() {
-    const active = filters.filter(f => f.active());
-    rows().forEach(function (r) {
-      let show = active.every(f => f.match(cellVal(r, f.i)));
-      if (show && globalTerm) {
-        show = Array.from(r.cells).some(c => {
-          const f = c.querySelector('input,select,textarea');
-          return ((f ? f.value : c.textContent) || '').toLowerCase().includes(globalTerm);
-        });
-      }
-      r.style.display = show ? '' : 'none';
-    });
+  const PER = 50;
+  let filtered = master.slice();
+  let page = 1;
+  let sortCol = -1, dir = 1;
+  const isDate = s => /^\d{4}-\d{2}-\d{2}/.test(s);
+  const isNum = s => /^[\d., ]+$/.test(s) && !isNaN(parseFloat(s.replace(/[, ]/g, '')));
+
+  const pager = document.createElement('div');
+  pager.className = 'pager';
+  table.insertAdjacentElement('afterend', pager);
+
+  function render() {
+    if (sortCol !== -1) {
+      filtered.sort(function (a, b) {
+        const x = cellVal(a, sortCol), y = cellVal(b, sortCol);
+        if (!x && !y) return 0; if (!x) return 1; if (!y) return -1;
+        let c;
+        if (isDate(x) && isDate(y)) c = x.localeCompare(y);
+        else if (isNum(x) && isNum(y)) c = parseFloat(x.replace(/[, ]/g, '')) - parseFloat(y.replace(/[, ]/g, ''));
+        else c = x.toLowerCase().localeCompare(y.toLowerCase());
+        return c * dir;
+      });
+    }
+    const total = filtered.length;
+    const pages = Math.max(1, Math.ceil(total / PER));
+    if (page > pages) page = pages;
+    if (page < 1) page = 1;
+    const start = (page - 1) * PER;
+    const slice = filtered.slice(start, start + PER);
+
+    body.textContent = '';
+    if (slice.length) {
+      slice.forEach(r => body.appendChild(r));
+    } else if (emptyRow && !master.length) {
+      body.appendChild(emptyRow);
+    } else {
+      const tr = document.createElement('tr'), td = document.createElement('td');
+      td.colSpan = heads.length; td.style.color = 'var(--muted)';
+      td.textContent = 'No rows match your filters.';
+      tr.appendChild(td); body.appendChild(tr);
+    }
+
+    pager.textContent = '';
+    if (total) {
+      const info = document.createElement('span');
+      info.textContent = 'Showing ' + (start + 1) + '–' + Math.min(total, start + PER) + ' of ' + total +
+        (total !== master.length ? ' (filtered from ' + master.length + ')' : '');
+      pager.appendChild(info);
+    }
+    if (pages > 1) {
+      const prev = document.createElement(page > 1 ? 'a' : 'span');
+      prev.textContent = '‹ Prev';
+      if (page > 1) prev.addEventListener('click', () => { page--; render(); });
+      else prev.className = 'dis';
+      const mid = document.createElement('span'); mid.textContent = 'Page ' + page + ' of ' + pages;
+      const next = document.createElement(page < pages ? 'a' : 'span');
+      next.textContent = 'Next ›';
+      if (page < pages) next.addEventListener('click', () => { page++; render(); });
+      else next.className = 'dis';
+      pager.appendChild(prev); pager.appendChild(mid); pager.appendChild(next);
+    }
   }
+
+  function applyFilter() {
+    const active = filters.filter(f => f.active());
+    filtered = master.filter(function (r) {
+      let show = active.every(f => f.match(cellVal(r, f.i)));
+      // reuse cellVal (not a raw per-cell input scan) so a cell's *own* value is
+      // matched even when it also contains unrelated inputs, e.g. the "who"
+      // cell's hidden status/re-scan/delete forms sitting next to the name
+      if (show && globalTerm) {
+        show = heads.some((_, ci) => cellVal(r, ci).toLowerCase().includes(globalTerm));
+      }
+      return show;
+    });
+    page = 1;
+    render();
+  }
+
+  // let the delete handler (data-ajax="remove-row") drop a row out of the
+  // in-memory dataset too, so it doesn't reappear on the next filter/sort/page
+  table._sheetForget = function (tr) {
+    let idx = master.indexOf(tr); if (idx !== -1) master.splice(idx, 1);
+    idx = filtered.indexOf(tr); if (idx !== -1) filtered.splice(idx, 1);
+    render();
+  };
+
   document.addEventListener('click', () =>
     document.querySelectorAll('.mfilter.open').forEach(m => m.classList.remove('open')));
 
   const gs = table.dataset.search && document.getElementById(table.dataset.search);
-  if (gs) gs.addEventListener('input', () => { globalTerm = gs.value.trim().toLowerCase(); apply(); });
+  if (gs) gs.addEventListener('input', () => { globalTerm = gs.value.trim().toLowerCase(); applyFilter(); });
 
   // sorting — click a header to cycle asc → desc; a faint ↕ marks sortable columns
-  let sortCol = -1, dir = 1;
-  const isDate = s => /^\d{4}-\d{2}-\d{2}/.test(s);
-  const isNum = s => /^[\d., ]+$/.test(s) && !isNaN(parseFloat(s.replace(/[, ]/g, '')));
   heads.forEach(function (th, i) {
     if (th.dataset.sort === 'none') return;
     th.classList.add('sortable');
@@ -387,19 +479,12 @@ document.querySelectorAll('table[data-sheet]').forEach(function (table) {
       dir = (sortCol === i) ? -dir : 1; sortCol = i;
       heads.forEach(h => { const s = h.querySelector('.sortind'); if (s) { s.textContent = '↕'; s.classList.remove('act'); } });
       ind.textContent = dir > 0 ? '▲' : '▼'; ind.classList.add('act');
-      const rs = rows();
-      rs.sort(function (a, b) {
-        const x = cellVal(a, i), y = cellVal(b, i);
-        if (!x && !y) return 0; if (!x) return 1; if (!y) return -1;
-        let c;
-        if (isDate(x) && isDate(y)) c = x.localeCompare(y);
-        else if (isNum(x) && isNum(y)) c = parseFloat(x.replace(/[, ]/g, '')) - parseFloat(y.replace(/[, ]/g, ''));
-        else c = x.toLowerCase().localeCompare(y.toLowerCase());
-        return c * dir;
-      });
-      rs.forEach(r => body.appendChild(r));
+      page = 1;
+      render();
     });
   });
+
+  render();
 
   // one-click copy button next to a value (e.g. email)
   body.addEventListener('click', function (e) {

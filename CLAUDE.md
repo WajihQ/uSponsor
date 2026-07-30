@@ -51,6 +51,13 @@ on the owner's Windows PC (`python app.py` → http://127.0.0.1:5000).
 ## Conventions
 
 - Test with `python demo_seed.py` (wipes sponsors.db, seeds fake data).
+- `tests/` has Playwright browser tests for the shared spreadsheet component
+  (`base.html`'s virtualized filter/sort/paginate JS behind the Influencer CRM
+  and Brand CRM tables) — real DOM/JS behavior that a Flask `test_client()`
+  can't exercise. One-time setup: `pip install -r requirements-dev.txt &&
+  playwright install chromium`. Run with `pytest`. Uses its own throwaway
+  SQLite DB (`USPONSOR_DB` env var, set in `tests/conftest.py`), never
+  `sponsors.db`.
 - YouTube/SponsorBlock may be unreachable in sandboxes — test scraping with
   monkeypatched `_list_uploads`/`_fetch_video` (see git history for patterns).
 - Windows matters: no `%-d` strftime, no glibc-only anything.
