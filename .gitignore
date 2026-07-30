@@ -14,6 +14,8 @@ client_secret*.json
 gmail_tokens/
 # Instantly API key — never commit
 instantly.json
+# YouTube Data API v3 key — never commit
+youtube_api.json
 # YouTube auth cookies — never commit
 cookies.txt
 .venv/

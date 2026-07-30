@@ -1,8 +1,10 @@
 # uSponsor — project context for Claude
 
-Local Flask + yt-dlp app that tracks which brands sponsor YouTube creators for an
-influencer-marketing agency (tech/gaming niches). No paid APIs. Single user, runs
-on the owner's Windows PC (`python app.py` → http://127.0.0.1:5000).
+Local Flask app that tracks which brands sponsor YouTube creators for an
+influencer-marketing agency (tech/gaming niches). No paid APIs — metadata comes
+from the YouTube Data API v3 free tier (primary, added 2026-07-29) with
+yt-dlp/cookies as the automatic fallback. Single user, runs on the owner's
+Windows PC (`python app.py` → http://127.0.0.1:5000).
 
 ## Architecture
 
@@ -12,12 +14,31 @@ on the owner's Windows PC (`python app.py` → http://127.0.0.1:5000).
   every start; new columns are added via PRAGMA checks — always migrate this way,
   the user has a live `sponsors.db` they must never lose). WAL mode for the
   parallel scanner.
-- `tracker/scraper.py` — yt-dlp scanning. Base scan: newest 30 listed, ≤12
-  fetched per channel, skips channels scanned <24h ago, 4 parallel workers
-  (`USPONSOR_WORKERS`). Backfill scan: sequential + 1.5s sleeps, walks full
+- `tracker/youtube_api.py` — YouTube Data API v3 (free tier, `youtube_api.json`
+  or `YOUTUBE_API_KEY`). Primary source for channel listings and video stats:
+  `videos.list`/`playlistItems.list`, quota-metered (not the scraping
+  throttle), batches up to 50 video ids/call. Auto-captions aren't available
+  through it, so spoken-sponsor detection stays on yt-dlp regardless.
+- `tracker/scraper.py` — metadata fetch is API-first, yt-dlp/cookies fallback
+  (per-call, via `_fetch_video`/`_list_uploads`; `scan_channel` and
+  `stats_backfill_pass` batch their API lookups directly for efficiency). A
+  circuit breaker (`Throttled`/`throttle_active`/`_trip_throttle`) sits under
+  every yt-dlp call: a real throttle/block response pauses all further
+  requests for a cooldown (20-60 min depending on severity) instead of
+  grinding through the rest of the queue, and resumes on its own once it
+  passes — added 2026-07-25 after an unpaced backfill tripped a YouTube
+  session-level block. Base scan: newest 30 listed, ≤12 fetched per channel,
+  skips channels scanned <24h ago, 4 parallel workers (`USPONSOR_WORKERS`).
+  Backfill scan: sequential + 1.5s sleeps (yt-dlp path only), walks full
   uploads feed to a cutoff, remembers depth per channel (`backfilled_to`).
   Post-scan `segment_pass()` queries SponsorBlock and auto-names sponsors from
-  caption slices.
+  caption slices; `stats_backfill_pass()` drains any videos missing
+  `view_count` (capped per run — `USPONSOR_STATS_BACKFILL_LIMIT_API` when the
+  Data API is available, `USPONSOR_STATS_BACKFILL_LIMIT` on the yt-dlp
+  fallback) so creator stats self-heal over time instead of needing a one-off
+  repair script — added 2026-07-25 after a batch of videos backfilled before
+  `view_count` was captured (2026-07-05) turned out permanently stuck at
+  NULL, since scan modes never revisit an already-stored video.
 - `tracker/detector.py` — regex sponsor detection over descriptions
   ("sponsored by X", "% off X", "use code Y at X"…), with a cleaning pipeline
   (junk like "checkout", "code NUTTY", "the link below" is rejected), a

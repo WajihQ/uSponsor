@@ -9,7 +9,7 @@ import os
 from flask import Flask, abort, flash, jsonify, redirect, render_template, request, send_from_directory, url_for
 from werkzeug.utils import secure_filename
 
-from tracker import db, gmail_sync, instantly, scraper
+from tracker import db, gmail_sync, instantly, scraper, youtube_api
 from tracker.detector import brand_key
 
 app = Flask(__name__)
@@ -603,6 +603,10 @@ def settings():
     return render_template(
         "settings.html", scan=scraper.STATE,
         gmail=gmail_sync.status(), instantly=instantly.status(),
+        youtube_api={
+            "configured": youtube_api.configured(),
+            "quota_exhausted_until": youtube_api.quota_exhausted_until(),
+        },
     )
 
 

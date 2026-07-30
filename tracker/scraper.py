@@ -1,4 +1,5 @@
-"""Incremental channel scraping via yt-dlp (no API keys).
+"""Incremental channel scraping: YouTube Data API v3 first, yt-dlp/cookies
+as the automatic fallback (see tracker/youtube_api.py).
 
 Two scan modes, both writing to the same database:
 
@@ -9,6 +10,20 @@ Two scan modes, both writing to the same database:
   newest → oldest, fetching every unseen video until it reaches the
   cutoff (N years back). Slower by nature, so it sleeps between fetches
   to stay under YouTube's radar.
+
+Every metadata fetch tries the Data API first (_fetch_video/_list_uploads;
+scan_channel and stats_backfill_pass batch their lookups directly, up to 50
+video ids per call) and only drops to yt-dlp when the API isn't configured,
+a lookup fails, or the daily quota runs out — captions for spoken-sponsor
+detection (segment_pass) have no practical API path, so that stays on
+yt-dlp regardless.
+
+A circuit breaker (Throttled / throttle_active / _trip_throttle) sits under
+every yt-dlp call: once a response looks like real throttling, it stops
+making further requests for a cooldown window instead of grinding through
+the rest of the queue, and resumes on its own once the cooldown passes — no
+manual restart needed. The Data API path has its own, separate cooldown
+(youtube_api.QuotaExceeded) for when the daily quota runs out.
 """
 import concurrent.futures as cf
 import datetime as dt
@@ -19,7 +34,7 @@ import time
 
 from yt_dlp import YoutubeDL
 
-from . import db, sponsorblock
+from . import db, sponsorblock, youtube_api
 from .detector import brand_key, detect_sponsors, detect_spoken
 
 LOOKBACK_ENTRIES = 30       # base scan: how many newest uploads to list per channel
@@ -27,6 +42,10 @@ MAX_NEW_PER_SCAN = 12       # base scan: cap detail fetches per channel per scan
 SCAN_WORKERS = max(1, int(os.environ.get("USPONSOR_WORKERS", "4")))  # base-scan parallelism
 BACKFILL_SLEEP = 1.5        # backfill: polite delay (seconds) between video fetches
 BACKFILL_HARD_CAP = 600     # backfill: safety cap on fetches per channel per run
+STATS_BACKFILL_LIMIT = int(os.environ.get("USPONSOR_STATS_BACKFILL_LIMIT", "150"))  # per-scan cap, yt-dlp fallback path
+STATS_BACKFILL_LIMIT_API = int(os.environ.get("USPONSOR_STATS_BACKFILL_LIMIT_API", "2000"))  # per-scan cap via Data API
+STATS_BACKFILL_SLEEP = 1.5  # polite delay (seconds) between yt-dlp stats-backfill fetches
+SPONSORBLOCK_WORKERS = max(1, int(os.environ.get("USPONSOR_SPONSORBLOCK_WORKERS", "8")))  # sponsor.ajay.app is a plain HTTP API, not YouTube — safe to fan out
 
 # Shared progress state for the web UI.
 STATE = {
@@ -37,6 +56,7 @@ STATE = {
     "total": 0,
     "log": [],
     "finished_at": None,
+    "throttled_until": None,   # epoch seconds; set while a YouTube cooldown is active
 }
 _lock = threading.Lock()
 
@@ -50,6 +70,37 @@ def _log(msg):
 def _set_current(label):
     with _lock:
         STATE["current"] = label
+
+
+class Throttled(Exception):
+    """Raised by _extract() instead of making a request while the circuit
+    breaker (see _trip_throttle/throttle_active) is cooling down."""
+
+
+_throttle_until = 0.0  # epoch seconds; 0 = not currently throttled
+
+
+def throttle_active():
+    """True if a prior YouTube block is still cooling down. Every fetch loop
+    checks this (via _extract) instead of grinding through its remaining
+    queue on a block that YouTube already told us isn't clearing yet."""
+    global _throttle_until
+    if _throttle_until and time.time() >= _throttle_until:
+        _throttle_until = 0.0
+        STATE["throttled_until"] = None
+    return time.time() < _throttle_until
+
+
+def _trip_throttle(minutes, reason):
+    """Start (or extend) a cooldown. Logs once per cooldown, not once per
+    request, so a run doesn't drown its own log in duplicate warnings."""
+    global _throttle_until
+    was_active = throttle_active()
+    _throttle_until = max(_throttle_until, time.time() + minutes * 60)
+    STATE["throttled_until"] = _throttle_until
+    if not was_active:
+        until = time.strftime("%H:%M", time.localtime(_throttle_until))
+        _log(f"  ⚠ {reason} — pausing all YouTube requests until {until} (resumes automatically)")
 
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -148,22 +199,39 @@ _RATE_HINTS = ("sign in to confirm", "not a bot", "http error 429", "too many re
 
 
 def _extract(url, opts=None, tries=4, base_wait=20):
-    """extract_info with retry+backoff on YouTube throttling / bot-check errors."""
+    """extract_info with retry+backoff on YouTube throttling / bot-check errors.
+
+    Raises Throttled without attempting a request if the circuit breaker is
+    already cooling down. On a hit, a message that names an explicit
+    session-level block skips straight to a long cooldown (retrying it would
+    just waste 4 tries for nothing); a generic throttle signal still gets
+    the normal short backoff first, and only trips the breaker if that
+    backoff doesn't resolve it either.
+    """
+    if throttle_active():
+        until = time.strftime("%H:%M", time.localtime(_throttle_until))
+        raise Throttled(f"cooling down until {until}")
     for attempt in range(tries):
         try:
             with _ydl(opts) as y:
                 return y.extract_info(url, download=False)
         except Exception as exc:
-            throttled = any(h in str(exc).lower() for h in _RATE_HINTS)
+            msg = str(exc).lower()
+            if "rate-limited" in msg and "session" in msg:
+                _trip_throttle(60, "YouTube reported a session-level rate limit")
+                raise
+            throttled = any(h in msg for h in _RATE_HINTS)
             if throttled and attempt < tries - 1:
                 wait = base_wait * (2 ** attempt)
                 _log(f"  … throttled by YouTube, waiting {wait}s (retry {attempt + 1}/{tries - 1})")
                 time.sleep(wait)
                 continue
+            if throttled:
+                _trip_throttle(20, "Repeated YouTube throttling")
             raise
 
 
-def _list_uploads(channel_url, limit=LOOKBACK_ENTRIES):
+def _list_uploads_ytdlp(channel_url, limit=LOOKBACK_ENTRIES):
     """One flat request: channel name/id + newest-first video entries.
 
     limit=None lists the entire uploads feed (used by backfill).
@@ -179,15 +247,57 @@ def _list_uploads(channel_url, limit=LOOKBACK_ENTRIES):
     return info.get("channel_id") or info.get("id"), name, entries, info.get("channel_follower_count")
 
 
-def _fetch_video(video_id):
+def _list_uploads(channel_url, limit=LOOKBACK_ENTRIES, cutoff=None):
+    """(channel_id, name, entries, subscriber_count) — Data API v3 first
+    (cheap, quota-metered, untouched by YouTube's scraping throttle), yt-dlp
+    fallback when it's not configured, the channel URL shape isn't a
+    reliable API lookup key (e.g. /c/ vanity URLs), or the quota runs out.
+
+    cutoff (a date, backfill only) stops the API listing once it reaches a
+    video older than it, instead of walking a channel's entire lifetime
+    history — the yt-dlp fallback has no cheap way to do this, so it's
+    ignored there (pre-existing behavior, unchanged).
+    """
+    if youtube_api.available():
+        try:
+            return youtube_api.list_channel_videos(channel_url, limit=limit, cutoff=cutoff)
+        except youtube_api.QuotaExceeded:
+            _log("  ! YouTube Data API quota exhausted for today — falling back to cookie-based scraping")
+        except Exception:
+            pass  # channel not resolvable via API, or a transient hiccup
+    return _list_uploads_ytdlp(channel_url, limit)
+
+
+def _fetch_video_ytdlp(video_id):
     # player_skip: we only need metadata (title/date/description), so skip the
     # stream-resolution work — noticeably faster per video
     return _extract(f"https://www.youtube.com/watch?v={video_id}",
                     {"extractor_args": {"youtube": {"player_skip": ["js", "configs"]}}})
 
 
+def _fetch_video(video_id):
+    """Single-video metadata fetch: Data API v3 first, yt-dlp fallback.
+    Callers that already have a batch of ids on hand (scan_channel,
+    stats_backfill_pass) call youtube_api.videos_batch() directly instead —
+    one API call for up to 50 videos beats one call each.
+    """
+    if youtube_api.available():
+        try:
+            return youtube_api.fetch_video(video_id)
+        except youtube_api.QuotaExceeded:
+            _log("  ! YouTube Data API quota exhausted for today — falling back to cookie-based scraping")
+        except Exception:
+            pass  # not found via API, or a transient hiccup — try yt-dlp
+    return _fetch_video_ytdlp(video_id)
+
+
 def _store_video(conn, ch, v, known=(), aliases=None):
-    """Insert a fetched video + its detected sponsorships. Returns (stored?, n_spons, date)."""
+    """Insert a fetched video + its detected sponsorships.
+    Returns (stored?, n_spons, date, row_id) — row_id is None when the video
+    already existed. SponsorBlock isn't checked here: callers batch it across
+    everything they just stored via _sponsorblock_check_batch (one parallel
+    fan-out instead of one sequential HTTP call per video).
+    """
     raw_date = v.get("upload_date")  # YYYYMMDD
     upload_date = (
         dt.datetime.strptime(raw_date, "%Y%m%d").date().isoformat() if raw_date else None
@@ -199,7 +309,7 @@ def _store_video(conn, ch, v, known=(), aliases=None):
          v.get("view_count"), v.get("like_count"), v.get("comment_count")),
     )
     if not cur.rowcount:
-        return False, 0, upload_date
+        return False, 0, upload_date, None
     n = 0
     for brand, evidence in detect_sponsors(v.get("description"), known):
         brand, key = db.apply_alias(brand, aliases or {})
@@ -209,17 +319,42 @@ def _store_video(conn, ch, v, known=(), aliases=None):
             (cur.lastrowid, brand, key, evidence),
         )
         n += 1
-    # cheap SponsorBlock lookup: does this video contain a paid segment?
-    try:
-        segs = sponsorblock.fetch_segments(v["id"])
+    conn.commit()
+    return True, n, upload_date, cur.lastrowid
+
+
+def _sponsorblock_check_batch(video_ids):
+    """{video_id: segs} for videos whose SponsorBlock lookup succeeded (segs
+    is [] when no paid segment was found); a failed lookup is simply absent
+    so the caller leaves it sb_checked=0 for a retry later. Looked up in
+    parallel — sponsor.ajay.app is a plain community HTTP API, not YouTube,
+    so it's untouched by the scraping throttle and cheap to fan out.
+    """
+    results = {}
+    ids = list(dict.fromkeys(video_ids))
+    if not ids:
+        return results
+    with cf.ThreadPoolExecutor(max_workers=min(SPONSORBLOCK_WORKERS, len(ids))) as pool:
+        futures = {pool.submit(sponsorblock.fetch_segments, vid): vid for vid in ids}
+        for fut in cf.as_completed(futures):
+            vid = futures[fut]
+            try:
+                results[vid] = fut.result()
+            except Exception:
+                pass  # network hiccup — stays unchecked, retried next pass
+    return results
+
+
+def _apply_sponsorblock_results(conn, row_id_by_video, results):
+    for video_id, segs in results.items():
+        row_id = row_id_by_video.get(video_id)
+        if row_id is None:
+            continue
         conn.execute(
             "UPDATE videos SET sb_checked = 1, sb_sponsored = ?, sb_segments = ? WHERE id = ?",
-            (1 if segs else 0, json.dumps(segs) if segs else None, cur.lastrowid),
+            (1 if segs else 0, json.dumps(segs) if segs else None, row_id),
         )
-    except Exception:
-        pass  # stays sb_checked=0; the post-scan pass retries it
     conn.commit()
-    return True, n, upload_date
 
 
 def rerun_detection():
@@ -273,18 +408,11 @@ def segment_pass(check_limit=300, caption_limit=40):
             " ORDER BY upload_date DESC LIMIT ?",
             (check_limit,),
         ).fetchall()
-        for r in rows:
-            try:
-                segs = sponsorblock.fetch_segments(r["video_id"])
-            except Exception:
-                continue  # network hiccup: stays unchecked, retried next pass
-            checked += 1
-            flagged += bool(segs)
-            conn.execute(
-                "UPDATE videos SET sb_checked = 1, sb_sponsored = ?, sb_segments = ? WHERE id = ?",
-                (1 if segs else 0, json.dumps(segs) if segs else None, r["id"]),
-            )
-        conn.commit()
+        row_id_by_video = {r["video_id"]: r["id"] for r in rows}
+        sb_results = _sponsorblock_check_batch(list(row_id_by_video))
+        _apply_sponsorblock_results(conn, row_id_by_video, sb_results)
+        checked = len(sb_results)
+        flagged = sum(1 for segs in sb_results.values() if segs)
 
         known = db.known_brand_names(conn)
         aliases = db.alias_map(conn)
@@ -304,6 +432,10 @@ def segment_pass(check_limit=300, caption_limit=40):
                 cap_url = sponsorblock.pick_caption_url(info)
                 if cap_url:
                     text = sponsorblock.transcript_slice(cap_url, segs)
+            except Throttled:
+                # stop naming for this run rather than mis-marking the rest
+                # 'pending' (review=pending means "tried and couldn't tell")
+                break
             except Exception as exc:
                 _log(f"  ! captions failed for {v['video_id']}: {exc}")
             brands = detect_spoken(text, known) if text else []
@@ -331,6 +463,73 @@ def segment_pass(check_limit=300, caption_limit=40):
                 f" {named} auto-named from captions, {pending} sent to review"
             )
         return checked, flagged, named, pending
+    finally:
+        conn.close()
+
+
+def stats_backfill_pass(limit=None):
+    """Fill in view_count/like_count/comment_count for stored videos missing
+    it — either backfilled before that data was captured (pre-2026-07-05),
+    or any fetch that transiently returned it as None. Scan modes only ever
+    fetch videos they haven't stored yet, so without this pass those NULLs
+    are permanent; running a capped batch after every scan drains the
+    backlog over time instead of needing a one-off repair script. Newest
+    videos first, since that's the window creator-stats reads.
+
+    Data API v3 first, batched up to 50 ids/call — cheap enough to use a
+    much bigger cap than the yt-dlp fallback path, which stays paced and
+    small since it shares the scraping throttle with everything else.
+
+    Returns (filled, attempted).
+    """
+    if limit is None:
+        limit = STATS_BACKFILL_LIMIT_API if youtube_api.available() else STATS_BACKFILL_LIMIT
+    conn = db.connect()
+    filled = 0
+    try:
+        rows = conn.execute(
+            "SELECT id, video_id FROM videos WHERE view_count IS NULL"
+            " ORDER BY upload_date DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        by_video_id = {r["video_id"]: r["id"] for r in rows}
+        remaining = list(by_video_id)
+
+        if youtube_api.available() and remaining:
+            try:
+                api_data = youtube_api.videos_batch(remaining)
+            except youtube_api.QuotaExceeded:
+                _log("  ! YouTube Data API quota exhausted for today — falling back to cookie-based scraping")
+                api_data = {}
+            except Exception as exc:
+                _log(f"  ! YouTube Data API batch lookup failed ({exc}) — falling back to cookie-based scraping")
+                api_data = {}
+            for video_id, v in api_data.items():
+                conn.execute(
+                    "UPDATE videos SET view_count = ?, like_count = ?, comment_count = ? WHERE id = ?",
+                    (v.get("view_count"), v.get("like_count"), v.get("comment_count"), by_video_id[video_id]),
+                )
+                conn.commit()
+                filled += 1
+            remaining = [vid for vid in remaining if vid not in api_data]
+
+        for video_id in remaining:  # not configured, quota-exhausted, or missing from the API result
+            try:
+                v = _fetch_video_ytdlp(video_id)
+            except Throttled:
+                break  # stop this pass; the rest are retried once the cooldown clears
+            except Exception:
+                continue  # private/removed — retried next pass too
+            conn.execute(
+                "UPDATE videos SET view_count = ?, like_count = ?, comment_count = ? WHERE id = ?",
+                (v.get("view_count"), v.get("like_count"), v.get("comment_count"), by_video_id[video_id]),
+            )
+            conn.commit()
+            filled += 1
+            time.sleep(STATS_BACKFILL_SLEEP)
+        if rows:
+            _log(f"Stats backfill: filled in {filled}/{len(rows)} video(s) missing view counts")
+        return filled, len(rows)
     finally:
         conn.close()
 
@@ -363,23 +562,49 @@ def scan_channel(conn, ch):
     known = db.known_brand_names(conn)
     aliases = db.alias_map(conn)
 
-    new_videos = new_spons = errors = 0
-    for entry in fresh:
+    # one batched Data API call for the whole channel beats one yt-dlp call
+    # per video; only videos it doesn't cover fall through to yt-dlp below
+    api_data = {}
+    if youtube_api.available() and fresh:
         try:
-            v = _fetch_video(entry["id"])
-        except Exception as exc:  # video may be private/removed, or YouTube is rate-limiting
-            _log(f"  ! skipped {entry['id']}: {exc}")
-            errors += 1
-            continue
-        stored, n, _ = _store_video(conn, ch, v, known, aliases)
+            api_data = youtube_api.videos_batch([e["id"] for e in fresh])
+        except youtube_api.QuotaExceeded:
+            _log("  ! YouTube Data API quota exhausted for today — falling back to cookie-based scraping")
+        except Exception as exc:
+            _log(f"  ! YouTube Data API batch lookup failed ({exc}) — falling back to cookie-based scraping")
+
+    new_videos = new_spons = errors = 0
+    throttled_early = False
+    row_id_by_video = {}
+    for entry in fresh:
+        v = api_data.get(entry["id"])
+        if v is None:
+            try:
+                v = _fetch_video_ytdlp(entry["id"])
+            except Throttled:
+                throttled_early = True  # cooldown just tripped — stop burning fetches on it
+                break
+            except Exception as exc:  # video may be private/removed
+                _log(f"  ! skipped {entry['id']}: {exc}")
+                errors += 1
+                continue
+        stored, n, _, row_id = _store_video(conn, ch, v, known, aliases)
         new_videos += stored
         new_spons += n
-    # had new videos to fetch but every fetch failed (e.g. rate-limited) -> don't
-    # count this as scanned, so the next run retries instead of skipping it for 24h
-    if fresh and errors == len(fresh):
+        if row_id is not None:
+            row_id_by_video[entry["id"]] = row_id
+    if row_id_by_video:
+        results = _sponsorblock_check_batch(list(row_id_by_video))
+        _apply_sponsorblock_results(conn, row_id_by_video, results)
+    # had new videos to fetch but every fetch failed (rate-limited, or all private/removed)
+    # -> don't count this as scanned, so the next run retries instead of skipping it for 24h
+    if throttled_early or (fresh and errors == len(fresh)):
         conn.execute("UPDATE channels SET last_scanned = NULL WHERE id = ?", (ch["id"],))
         conn.commit()
-        _log(f"  ! {name}: all {errors} fetch(es) failed — will retry next scan")
+        if throttled_early:
+            _log(f"  ! {name}: paused by YouTube throttling — will resume next scan")
+        else:
+            _log(f"  ! {name}: all {errors} fetch(es) failed — will retry next scan")
     return name, new_videos, new_spons
 
 
@@ -388,38 +613,83 @@ def backfill_channel(conn, ch, cutoff):
 
     The uploads feed is newest-first, so we stop at the first fetched video
     older than the cutoff. Already-stored videos are skipped without a fetch.
+
+    Data API v3 first, batched up to 50 ids/call — it's quota-metered, not
+    subject to yt-dlp's scraping throttle, so it isn't paced. BACKFILL_SLEEP
+    only applies to whatever falls through to the yt-dlp fallback per video.
     """
-    channel_id, name, entries, subs = _list_uploads(ch["input_url"], limit=None)
+    channel_id, name, entries, subs = _list_uploads(ch["input_url"], limit=None, cutoff=cutoff)
     _update_channel_meta(conn, ch, channel_id, name, subs)
     seen = _known_ids(conn, ch)
     known = db.known_brand_names(conn)
     aliases = db.alias_map(conn)
 
-    new_videos = new_spons = fetched = 0
-    completed = True
+    # collect the run of not-yet-stored ids to fetch, newest-first, stopping
+    # at the hard cap or at an already-stored video older than the cutoff
+    # (a previous run already covered everything beyond that point)
+    todo = []
     for entry in entries:
         if entry["id"] in seen:
             stored_date = seen[entry["id"]]
             if stored_date and stored_date < cutoff.isoformat():
-                break  # already walked past the cutoff on a previous run
+                break
             continue
-        if fetched >= BACKFILL_HARD_CAP:
-            _log(f"  ! {name}: hit the {BACKFILL_HARD_CAP}-video safety cap — run backfill again to continue")
-            completed = False
+        todo.append(entry["id"])
+        if len(todo) >= BACKFILL_HARD_CAP:
             break
-        try:
-            v = _fetch_video(entry["id"])
-        except Exception as exc:
-            _log(f"  ! skipped {entry['id']}: {exc}")
-            continue
-        fetched += 1
-        stored, n, upload_date = _store_video(conn, ch, v, known, aliases)
-        new_videos += stored
-        new_spons += n
-        _set_current(f"{name} — {new_videos} video(s) so far ({upload_date or '?'})")
-        if upload_date and upload_date < cutoff.isoformat():
-            break  # reached the cutoff; everything older is out of range
-        time.sleep(BACKFILL_SLEEP)
+    hit_hard_cap = len(todo) >= BACKFILL_HARD_CAP
+
+    new_videos = new_spons = 0
+    throttled_early = False
+    for i in range(0, len(todo), 50):
+        chunk = todo[i:i + 50]
+        api_data = {}
+        if youtube_api.available():
+            try:
+                api_data = youtube_api.videos_batch(chunk)
+            except youtube_api.QuotaExceeded:
+                _log("  ! YouTube Data API quota exhausted for today — falling back to cookie-based scraping")
+            except Exception as exc:
+                _log(f"  ! YouTube Data API batch lookup failed ({exc}) — falling back to cookie-based scraping")
+
+        hit_cutoff = False
+        row_id_by_video = {}
+        for video_id in chunk:
+            v = api_data.get(video_id)
+            if v is None:
+                try:
+                    v = _fetch_video_ytdlp(video_id)
+                except Throttled:
+                    throttled_early = True
+                    break
+                except Exception as exc:
+                    _log(f"  ! skipped {video_id}: {exc}")
+                    continue
+                time.sleep(BACKFILL_SLEEP)  # only the yt-dlp fallback needs pacing
+            stored, n, upload_date, row_id = _store_video(conn, ch, v, known, aliases)
+            new_videos += stored
+            new_spons += n
+            if row_id is not None:
+                row_id_by_video[video_id] = row_id
+            _set_current(f"{name} — {new_videos} video(s) so far ({upload_date or '?'})")
+            if upload_date and upload_date < cutoff.isoformat():
+                hit_cutoff = True
+                break
+        if row_id_by_video:
+            results = _sponsorblock_check_batch(list(row_id_by_video))
+            _apply_sponsorblock_results(conn, row_id_by_video, results)
+        if throttled_early or hit_cutoff:
+            break
+
+    completed = True
+    if throttled_early:
+        # stop for this channel without marking it complete — a false
+        # "complete" here would permanently skip the unfetched depth
+        _log(f"  ! {name}: paused by YouTube throttling — will resume next backfill")
+        completed = False
+    elif hit_hard_cap:
+        _log(f"  ! {name}: hit the {BACKFILL_HARD_CAP}-video safety cap — run backfill again to continue")
+        completed = False
     if completed:
         # remember the covered depth so later backfills skip this channel
         # entirely (keep the deepest coverage if one already exists)
@@ -443,6 +713,14 @@ def run_scan(mode="base", years=1, target="all", force=False):
         if STATE["running"]:
             return
         STATE.update(running=True, mode=mode, done=0, total=0, current="", log=[], finished_at=None)
+    if throttle_active():
+        until = time.strftime("%H:%M", time.localtime(_throttle_until))
+        _log(f"Scan skipped — YouTube cooldown active until {until} (resumes automatically)")
+        with _lock:
+            STATE["running"] = False
+            STATE["current"] = ""
+            STATE["finished_at"] = dt.datetime.now().strftime("%H:%M:%S")
+        return
     cutoff = dt.date.today() - dt.timedelta(days=int(years) * 365)
     if mode == "backfill":
         _log(f"Backfill scan: going back {years} year(s), to {cutoff.isoformat()}")
@@ -485,6 +763,8 @@ def run_scan(mode="base", years=1, target="all", force=False):
                 else:
                     name, nv, ns = scan_channel(own, ch)
                 _log(f"{name}: {nv} new video(s), {ns} sponsorship(s)")
+            except Throttled:
+                pass  # already logged once when the cooldown tripped
             except Exception as exc:
                 _log(f"{label}: FAILED — {exc}")
             finally:
@@ -508,6 +788,10 @@ def run_scan(mode="base", years=1, target="all", force=False):
             segment_pass()
         except Exception as exc:
             _log(f"Sponsor-segment pass failed: {exc}")
+        try:
+            stats_backfill_pass()
+        except Exception as exc:
+            _log(f"Stats backfill pass failed: {exc}")
     finally:
         conn.close()
         with _lock:
