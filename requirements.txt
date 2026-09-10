@@ -5,3 +5,5 @@ tzdata; platform_system == "Windows"   # IANA timezones for zoneinfo (Campaigns 
 google-api-python-client>=2.0
 google-auth-oauthlib>=1.0
 google-auth-httplib2>=0.2
+# optional — only needed when TURSO_DATABASE_URL is set (hosted DB). See SETUP_TURSO.md
+libsql>=0.1.8

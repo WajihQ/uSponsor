@@ -3,13 +3,15 @@ pass (unclassified brand_key sponsorships + the sb pending-review queue).
 Run once; re-running is safe (won't duplicate existing rows)."""
 import csv
 import os
-import sqlite3
+import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, ROOT)
 QUEUE_PATH = os.path.join(ROOT, "transcript_review_queue.csv")
 
-conn = sqlite3.connect(os.path.join(ROOT, "sponsors.db"))
-conn.row_factory = sqlite3.Row
+from tracker import db  # noqa: E402 -- follows USPONSOR_DB / TURSO_DATABASE_URL, not a hardcoded path
+
+conn = db.connect()
 
 existing = set()
 if os.path.exists(QUEUE_PATH):
