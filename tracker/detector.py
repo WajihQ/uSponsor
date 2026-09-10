@@ -5,6 +5,15 @@ sponsored by NordVPN", "Thanks to Geekom for sponsoring"). We match those
 phrases, then aggressively clean the captured text down to a plausible
 brand name. Precision over recall: a missed sponsor is better than a
 dashboard full of junk rows.
+
+Only paid sponsorships count — a discount code, an affiliate link, or a
+brand crediting a gifted/review product is a different, uninteresting
+relationship for this tracker's purpose (agency outreach targets brands
+actually paying for placement). So every pattern here requires actual
+sponsor/partnership language; "use code X at Y" and "N% off X" style
+disclosures are deliberately not matched, even though they're common and
+easy to catch, because they signal affiliate/gifted deals at least as
+often as paid ones.
 """
 import re
 
@@ -16,9 +25,11 @@ PATTERNS = [
     # "sponsored by X" / "Sponsor: X" / "this video is sponsored by X"
     re.compile(r"\bsponsored\s+by\s+" + _BLOB, re.I),
     re.compile(r"\bsponsor(?:\s+of\s+(?:this|today'?s)\s+video)?\s*:\s*" + _BLOB, re.I),
-    # "thanks to X for sponsoring/supporting"
+    # "thanks to X for sponsoring" — deliberately NOT "...for supporting": that
+    # verb alone doesn't establish a paid relationship (gift/affiliate-only
+    # mentions use it too), see the module docstring.
     re.compile(
-        r"\bthanks?\s+(?:so\s+much\s+|again\s+|a\s+lot\s+)?to\s+(.{2,50}?)\s+for\s+(?:sponsoring|supporting)",
+        r"\bthanks?\s+(?:so\s+much\s+|again\s+|a\s+lot\s+)?to\s+(.{2,50}?)\s+for\s+sponsoring",
         re.I,
     ),
     re.compile(r"\bthank\s+you\s*,?\s+(?:to\s+)?(.{2,50}?)\s+for\s+sponsoring", re.I),
@@ -30,22 +41,16 @@ PATTERNS = [
     re.compile(r"\bpaid\s+promotion\s+(?:by|from)\s+" + _BLOB, re.I),
     # "today's (video) sponsor is X"
     re.compile(r"\btoday'?s\s+(?:video\s+)?sponsor(?:\s+is)?\s*[,:]?\s+" + _BLOB, re.I),
-    # "use/with code FOO at X"
-    re.compile(r"\b(?:use|using|with)\s+(?:code|coupon|promo\s+code)\s+\S{2,20}\s+at\s+" + _BLOB, re.I),
-    # "60% off X" — deal-style disclosures ("get 60% off an annual Incogni plan")
-    re.compile(
-        r"\d{1,3}%\s+(?:off|discount\s+on)\s+(?:your\s+|an?\s+|the\s+)?"
-        r"(?:first\s+|annual\s+|monthly\s+|yearly\s+|new\s+)?"
-        r"(?:order\s+of\s+|purchase\s+of\s+|subscription\s+(?:to|of)\s+)?" + _BLOB,
-        re.I,
-    ),
 ]
 
-# Sponsor-ish context words for the known-brand assist pass.
-_CONTEXT = re.compile(
-    r"sponsor|partner|paid promotion|#ad\b|\bad\b|promo|discount|coupon|use code|% off|deal|offer",
-    re.I,
-)
+# Sponsor-ish context words for the known-brand assist pass. Deliberately
+# excludes discount/coupon/use-code/%-off/deal/offer/promo — those signal an
+# affiliate or gifted-product relationship, not a paid sponsorship, and the
+# owner doesn't want those tracked (2026-08-13: removed the standalone
+# "use code X at Y" / "N% off X" PATTERNS entries for the same reason —
+# a creator crediting a brand for a free product or an affiliate code isn't
+# a sponsor, even though it reads like a disclosure).
+_CONTEXT = re.compile(r"sponsor|partner|paid promotion|#ad\b|\bad\b", re.I)
 
 # Words that never end a brand name — trimmed off the tail of a capture.
 _TRAILING_STOP = {

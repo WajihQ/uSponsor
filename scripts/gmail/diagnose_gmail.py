@@ -1,13 +1,16 @@
 """Read-only Gmail sync diagnostic. Changes nothing — just reports.
 
-    python diagnose_gmail.py
+    python scripts/gmail/diagnose_gmail.py   (run from the repo root)
 
 Tells you: which accounts are connected, whether the Gmail API responds, what
 recipients your recent Sent mail has, and how many of them match a lead email
 in your CRM (the thing the sync actually needs to work).
 """
+import os
 import sys
 import traceback
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 sys.stdout.reconfigure(encoding="utf-8")
 from tracker import db, gmail_sync as g
@@ -15,7 +18,7 @@ from tracker import db, gmail_sync as g
 accounts = g.list_accounts()
 print("Connected accounts:", accounts or "(none)")
 if not accounts:
-    print("-> No tokens in gmail_tokens/. Run:  python connect_gmail.py")
+    print("-> No tokens in gmail_tokens/. Run:  python scripts/gmail/connect_gmail.py")
     sys.exit()
 
 conn = db.connect()

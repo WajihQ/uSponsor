@@ -6,9 +6,16 @@ sponsors.db-shm
 uploads/
 .env
 # local cleanup artifacts (contain data; keep them, don't commit)
+cleanup_backups/
 cleanup_backup_*.csv
 brand_cleanup_proposal.csv
 needs_review.csv
+# transcript-review pass (Aug 2026) — resumable queue/checkpoint, local only
+transcript_review_queue.csv
+transcript_review_progress.md
+transcript_review_batch_*.json
+description_batch_*.json
+TRANSCRIPT_REVIEW_HANDOFF.md
 # Gmail OAuth secrets — never commit these
 client_secret*.json
 gmail_tokens/
@@ -16,8 +23,12 @@ gmail_tokens/
 instantly.json
 # YouTube Data API v3 key — never commit
 youtube_api.json
+# Supadata API key — never commit
+supadata_api.json
 # YouTube auth cookies — never commit
-cookies.txt
+cookies.txt*
+# persisted scraper throttle/cooldown state — local runtime only
+.throttle_state.json
 .venv/
 venv/
 .pytest_cache/

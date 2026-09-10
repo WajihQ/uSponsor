@@ -1,6 +1,6 @@
 """Read-only Instantly diagnostic — confirms the API works and the data shape.
 
-    python diagnose_instantly.py
+    python scripts/instantly/diagnose_instantly.py   (run from the repo root)
 
 Changes nothing. Prints: whether the key is accepted, your campaigns, the FULL
 field set of one sample lead (so we lock the status mapping to reality), the
@@ -8,7 +8,10 @@ status our logic derives for a few leads, and how many Instantly lead emails
 match a CRM lead.
 """
 import json
+import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 sys.stdout.reconfigure(encoding="utf-8")
 from tracker import db, instantly as ins

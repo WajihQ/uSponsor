@@ -45,6 +45,12 @@ BACKFILL_HARD_CAP = 600     # backfill: safety cap on fetches per channel per ru
 STATS_BACKFILL_LIMIT = int(os.environ.get("USPONSOR_STATS_BACKFILL_LIMIT", "150"))  # per-scan cap, yt-dlp fallback path
 STATS_BACKFILL_LIMIT_API = int(os.environ.get("USPONSOR_STATS_BACKFILL_LIMIT_API", "2000"))  # per-scan cap via Data API
 STATS_BACKFILL_SLEEP = 1.5  # polite delay (seconds) between yt-dlp stats-backfill fetches
+STATS_REFRESH_STALE_HOURS = int(os.environ.get("USPONSOR_STATS_REFRESH_STALE_HOURS", "24"))  # matches the base scan's own freshness window
+STATS_REFRESH_LIMIT = int(os.environ.get("USPONSOR_STATS_REFRESH_LIMIT", "50"))  # per-scan cap, yt-dlp fallback path
+STATS_REFRESH_LIMIT_API = int(os.environ.get("USPONSOR_STATS_REFRESH_LIMIT_API", "500"))  # per-scan cap via Data API
+SHORTS_MAX_SECONDS = 180    # YouTube's Shorts definition (extended to 3 min, Oct 2024)
+DURATION_BACKFILL_LIMIT = int(os.environ.get("USPONSOR_DURATION_BACKFILL_LIMIT", "150"))  # per-scan cap, yt-dlp fallback path
+DURATION_BACKFILL_LIMIT_API = int(os.environ.get("USPONSOR_DURATION_BACKFILL_LIMIT_API", "2000"))  # per-scan cap via Data API
 SPONSORBLOCK_WORKERS = max(1, int(os.environ.get("USPONSOR_SPONSORBLOCK_WORKERS", "8")))  # sponsor.ajay.app is a plain HTTP API, not YouTube — safe to fan out
 
 # Shared progress state for the web UI.
@@ -77,7 +83,35 @@ class Throttled(Exception):
     breaker (see _trip_throttle/throttle_active) is cooling down."""
 
 
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_THROTTLE_STATE_FILE = os.path.join(_ROOT, ".throttle_state.json")
+
 _throttle_until = 0.0  # epoch seconds; 0 = not currently throttled
+
+
+def _load_throttle_state():
+    """Pick up a cooldown a *previous process* already started. Without this,
+    every fresh `python fetch_gap_batch.py` forgets the block ever happened
+    and immediately re-triggers it — exactly what kept extending the 2026-08
+    YouTube block across several back-to-back manual retries."""
+    global _throttle_until
+    try:
+        with open(_THROTTLE_STATE_FILE, "r", encoding="utf-8") as f:
+            until = float(json.load(f).get("throttled_until") or 0)
+        _throttle_until = max(_throttle_until, until)
+    except (OSError, ValueError, TypeError):
+        pass
+
+
+def _save_throttle_state():
+    try:
+        with open(_THROTTLE_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"throttled_until": _throttle_until}, f)
+    except OSError:
+        pass
+
+
+_load_throttle_state()
 
 
 def throttle_active():
@@ -88,6 +122,7 @@ def throttle_active():
     if _throttle_until and time.time() >= _throttle_until:
         _throttle_until = 0.0
         STATE["throttled_until"] = None
+        _save_throttle_state()
     return time.time() < _throttle_until
 
 
@@ -98,12 +133,10 @@ def _trip_throttle(minutes, reason):
     was_active = throttle_active()
     _throttle_until = max(_throttle_until, time.time() + minutes * 60)
     STATE["throttled_until"] = _throttle_until
+    _save_throttle_state()
     if not was_active:
         until = time.strftime("%H:%M", time.localtime(_throttle_until))
         _log(f"  ⚠ {reason} — pausing all YouTube requests until {until} (resumes automatically)")
-
-
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 _cookie_valid_cache = {}  # path -> (mtime, size, valid) — re-checked only when the file changes
@@ -291,6 +324,13 @@ def _fetch_video(video_id):
     return _fetch_video_ytdlp(video_id)
 
 
+def _is_short(duration_seconds):
+    """None (unknown duration) defaults to 0 — long-form is already the
+    existing behavior for videos we can't classify, so unknowns don't get
+    silently dropped out of the long-form stats."""
+    return 1 if duration_seconds is not None and duration_seconds <= SHORTS_MAX_SECONDS else 0
+
+
 def _store_video(conn, ch, v, known=(), aliases=None):
     """Insert a fetched video + its detected sponsorships.
     Returns (stored?, n_spons, date, row_id) — row_id is None when the video
@@ -302,11 +342,13 @@ def _store_video(conn, ch, v, known=(), aliases=None):
     upload_date = (
         dt.datetime.strptime(raw_date, "%Y%m%d").date().isoformat() if raw_date else None
     )
+    duration = v.get("duration")
     cur = conn.execute(
         "INSERT OR IGNORE INTO videos (video_id, channel_ref, title, url, upload_date, description,"
-        " view_count, like_count, comment_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " view_count, like_count, comment_count, duration_seconds, is_short, stats_checked_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
         (v["id"], ch["id"], v.get("title"), v.get("webpage_url"), upload_date, v.get("description"),
-         v.get("view_count"), v.get("like_count"), v.get("comment_count")),
+         v.get("view_count"), v.get("like_count"), v.get("comment_count"), duration, _is_short(duration)),
     )
     if not cur.rowcount:
         return False, 0, upload_date, None
@@ -387,8 +429,18 @@ def rerun_detection():
 
 
 def _fetch_captions_info(video_id):
-    """Full extract (no player_skip) so caption tracks are present."""
-    return _extract(f"https://www.youtube.com/watch?v={video_id}")
+    """Caption-track lookup via the android player client, skipping the
+    webpage fetch entirely (player_skip webpage+configs). Captions come from
+    the player response, not the HTML, so they're still present — but this
+    avoids the actual watch-page request, which is where YouTube's "sign in
+    to confirm you're not a bot" wall lives. Added 2026-08 after repeated
+    web-client caption fetches (this call, run in a loop across a large
+    backlog) tripped an escalating block. Not a permanent fix — still keep
+    volume low and spread runs out; see _trip_throttle."""
+    return _extract(
+        f"https://www.youtube.com/watch?v={video_id}",
+        {"extractor_args": {"youtube": {"player_client": ["android"], "player_skip": ["webpage", "configs"]}}},
+    )
 
 
 def segment_pass(check_limit=300, caption_limit=40):
@@ -505,9 +557,12 @@ def stats_backfill_pass(limit=None):
                 _log(f"  ! YouTube Data API batch lookup failed ({exc}) — falling back to cookie-based scraping")
                 api_data = {}
             for video_id, v in api_data.items():
+                duration = v.get("duration")
                 conn.execute(
-                    "UPDATE videos SET view_count = ?, like_count = ?, comment_count = ? WHERE id = ?",
-                    (v.get("view_count"), v.get("like_count"), v.get("comment_count"), by_video_id[video_id]),
+                    "UPDATE videos SET view_count = ?, like_count = ?, comment_count = ?,"
+                    " duration_seconds = ?, is_short = ?, stats_checked_at = datetime('now') WHERE id = ?",
+                    (v.get("view_count"), v.get("like_count"), v.get("comment_count"),
+                     duration, _is_short(duration), by_video_id[video_id]),
                 )
                 conn.commit()
                 filled += 1
@@ -520,15 +575,171 @@ def stats_backfill_pass(limit=None):
                 break  # stop this pass; the rest are retried once the cooldown clears
             except Exception:
                 continue  # private/removed — retried next pass too
+            duration = v.get("duration")
             conn.execute(
-                "UPDATE videos SET view_count = ?, like_count = ?, comment_count = ? WHERE id = ?",
-                (v.get("view_count"), v.get("like_count"), v.get("comment_count"), by_video_id[video_id]),
+                "UPDATE videos SET view_count = ?, like_count = ?, comment_count = ?,"
+                " duration_seconds = ?, is_short = ?, stats_checked_at = datetime('now') WHERE id = ?",
+                (v.get("view_count"), v.get("like_count"), v.get("comment_count"),
+                 duration, _is_short(duration), by_video_id[video_id]),
             )
             conn.commit()
             filled += 1
             time.sleep(STATS_BACKFILL_SLEEP)
         if rows:
             _log(f"Stats backfill: filled in {filled}/{len(rows)} video(s) missing view counts")
+        return filled, len(rows)
+    finally:
+        conn.close()
+
+
+def stats_refresh_pass(limit_api=None, limit_ytdlp=None, stale_hours=None):
+    """Re-fetch view/like/comment counts that have gone stale, unlike
+    stats_backfill_pass above which only ever fills a NULL once. Nothing
+    else in the pipeline updates a video's stats after it's first stored —
+    scan_channel/backfill_channel skip anything already known — so a video
+    sitting in a creator's average-views window would otherwise report
+    whatever number it had the day it was first scanned, forever.
+
+    Scoped to exactly what the displayed stats use: each channel's newest
+    12 long-form + newest 12 Shorts with a positive view_count (the same
+    window app._channel_stats / the Influencer CRM's avg_views already
+    read) — no point refreshing a video nobody's average depends on. Same
+    API-first/yt-dlp-fallback/paced/capped shape as stats_backfill_pass.
+
+    Returns (refreshed, candidates).
+    """
+    limit_api = STATS_REFRESH_LIMIT_API if limit_api is None else limit_api
+    limit_ytdlp = STATS_REFRESH_LIMIT if limit_ytdlp is None else limit_ytdlp
+    stale_hours = STATS_REFRESH_STALE_HOURS if stale_hours is None else stale_hours
+    conn = db.connect()
+    refreshed = 0
+    try:
+        cutoff = (dt.datetime.now() - dt.timedelta(hours=stale_hours)).strftime("%Y-%m-%d %H:%M:%S")
+        rows = conn.execute(
+            """
+            WITH windowed AS (
+                SELECT id, video_id, stats_checked_at,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY channel_ref, COALESCE(is_short, 0)
+                           ORDER BY upload_date DESC
+                       ) AS rn
+                FROM videos
+                WHERE view_count IS NOT NULL AND view_count > 0
+            )
+            SELECT id, video_id FROM windowed
+            WHERE rn <= 12 AND (stats_checked_at IS NULL OR stats_checked_at < ?)
+            ORDER BY stats_checked_at IS NULL DESC, stats_checked_at ASC
+            LIMIT ?
+            """,
+            (cutoff, limit_api + limit_ytdlp),
+        ).fetchall()
+        by_video_id = {r["video_id"]: r["id"] for r in rows}
+        remaining = list(by_video_id)
+
+        if youtube_api.available() and remaining:
+            batch = remaining[:limit_api]
+            try:
+                api_data = youtube_api.videos_batch(batch)
+            except youtube_api.QuotaExceeded:
+                _log("  ! YouTube Data API quota exhausted for today — falling back to cookie-based scraping")
+                api_data = {}
+            except Exception as exc:
+                _log(f"  ! YouTube Data API batch lookup failed ({exc}) — falling back to cookie-based scraping")
+                api_data = {}
+            for video_id, v in api_data.items():
+                duration = v.get("duration")
+                conn.execute(
+                    "UPDATE videos SET view_count = ?, like_count = ?, comment_count = ?,"
+                    " duration_seconds = ?, is_short = ?, stats_checked_at = datetime('now') WHERE id = ?",
+                    (v.get("view_count"), v.get("like_count"), v.get("comment_count"),
+                     duration, _is_short(duration), by_video_id[video_id]),
+                )
+                conn.commit()
+                refreshed += 1
+            remaining = [vid for vid in remaining if vid not in api_data]
+
+        for video_id in remaining[:limit_ytdlp]:  # not configured, quota-exhausted, or missing from the batch
+            try:
+                v = _fetch_video_ytdlp(video_id)
+            except Throttled:
+                break  # stop this pass; the rest are retried once the cooldown clears
+            except Exception:
+                continue  # private/removed — retried next pass too
+            duration = v.get("duration")
+            conn.execute(
+                "UPDATE videos SET view_count = ?, like_count = ?, comment_count = ?,"
+                " duration_seconds = ?, is_short = ?, stats_checked_at = datetime('now') WHERE id = ?",
+                (v.get("view_count"), v.get("like_count"), v.get("comment_count"),
+                 duration, _is_short(duration), by_video_id[video_id]),
+            )
+            conn.commit()
+            refreshed += 1
+            time.sleep(STATS_BACKFILL_SLEEP)
+        if rows:
+            _log(f"Stats refresh: refreshed {refreshed}/{len(rows)} stale video(s) in creators' stats windows")
+        return refreshed, len(rows)
+    finally:
+        conn.close()
+
+
+def duration_backfill_pass(limit=None):
+    """Classify Shorts vs. long-form for stored videos captured before Shorts
+    tracking existed (2026-08-07) — those rows already have view_count filled
+    (stats_backfill_pass wouldn't touch them), so is_short would otherwise
+    stay NULL forever since scan modes never revisit an already-stored video.
+    Mirrors stats_backfill_pass's drain-over-time approach.
+
+    Returns (filled, attempted).
+    """
+    if limit is None:
+        limit = DURATION_BACKFILL_LIMIT_API if youtube_api.available() else DURATION_BACKFILL_LIMIT
+    conn = db.connect()
+    filled = 0
+    try:
+        rows = conn.execute(
+            "SELECT id, video_id FROM videos WHERE is_short IS NULL"
+            " ORDER BY upload_date DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        by_video_id = {r["video_id"]: r["id"] for r in rows}
+        remaining = list(by_video_id)
+
+        if youtube_api.available() and remaining:
+            try:
+                api_data = youtube_api.videos_batch(remaining)
+            except youtube_api.QuotaExceeded:
+                _log("  ! YouTube Data API quota exhausted for today — falling back to cookie-based scraping")
+                api_data = {}
+            except Exception as exc:
+                _log(f"  ! YouTube Data API batch lookup failed ({exc}) — falling back to cookie-based scraping")
+                api_data = {}
+            for video_id, v in api_data.items():
+                duration = v.get("duration")
+                conn.execute(
+                    "UPDATE videos SET duration_seconds = ?, is_short = ? WHERE id = ?",
+                    (duration, _is_short(duration), by_video_id[video_id]),
+                )
+                conn.commit()
+                filled += 1
+            remaining = [vid for vid in remaining if vid not in api_data]
+
+        for video_id in remaining:  # not configured, quota-exhausted, or missing from the API result
+            try:
+                v = _fetch_video_ytdlp(video_id)
+            except Throttled:
+                break  # stop this pass; the rest are retried once the cooldown clears
+            except Exception:
+                continue  # private/removed — retried next pass too
+            duration = v.get("duration")
+            conn.execute(
+                "UPDATE videos SET duration_seconds = ?, is_short = ? WHERE id = ?",
+                (duration, _is_short(duration), by_video_id[video_id]),
+            )
+            conn.commit()
+            filled += 1
+            time.sleep(STATS_BACKFILL_SLEEP)
+        if rows:
+            _log(f"Shorts backfill: classified {filled}/{len(rows)} video(s)")
         return filled, len(rows)
     finally:
         conn.close()
@@ -792,6 +1003,14 @@ def run_scan(mode="base", years=1, target="all", force=False):
             stats_backfill_pass()
         except Exception as exc:
             _log(f"Stats backfill pass failed: {exc}")
+        try:
+            duration_backfill_pass()
+        except Exception as exc:
+            _log(f"Shorts backfill pass failed: {exc}")
+        try:
+            stats_refresh_pass()
+        except Exception as exc:
+            _log(f"Stats refresh pass failed: {exc}")
     finally:
         conn.close()
         with _lock:

@@ -4,7 +4,7 @@ Prereqs (see SETUP_GMAIL.md): a Google Cloud OAuth *Desktop app* client whose
 downloaded JSON is saved next to this file as `client_secret.json`, and the
 Gmail API enabled on that project.
 
-    python connect_gmail.py
+    python scripts/gmail/connect_gmail.py   (run from the repo root)
 
 Opens a browser to sign in and consent (read-only header access to your mail).
 On success the token is written to gmail_tokens/<your-address>.json. Repeat for
@@ -15,7 +15,9 @@ import glob
 import os
 import sys
 
-from tracker.gmail_sync import SCOPES, TOKENS_DIR
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from tracker.gmail_sync import SCOPES, _save_new_token
 
 
 def main():
@@ -26,7 +28,6 @@ def main():
                  "(see SETUP_GMAIL.md).")
     try:
         from google_auth_oauthlib.flow import InstalledAppFlow
-        from googleapiclient.discovery import build
     except ImportError:
         sys.exit("Google libraries missing. Run:  pip install -r requirements.txt")
 
@@ -34,18 +35,11 @@ def main():
     print("A browser window will open — sign in with the account you want to sync.")
     creds = flow.run_local_server(port=0)
 
-    # ask Gmail who this token belongs to, so we can name the file
-    profile = build("gmail", "v1", credentials=creds, cache_discovery=False) \
-        .users().getProfile(userId="me").execute()
-    address = profile["emailAddress"]
-
-    os.makedirs(TOKENS_DIR, exist_ok=True)
-    path = os.path.join(TOKENS_DIR, address + ".json")
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(creds.to_json())
-    print(f"\nConnected {address}. Token saved to {path}")
+    address = _save_new_token(creds)
+    print(f"\nConnected {address}. Token saved to gmail_tokens/{address}.json")
     print("Run this again for any other sending account, then use the CRM's "
-          "'Sync now' / 'Full resync' buttons.")
+          "'Sync now' / 'Full resync' buttons (or the Settings page's Connect/"
+          "Reconnect links, which do this same flow without a terminal).")
 
 
 if __name__ == "__main__":

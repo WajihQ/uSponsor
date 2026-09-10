@@ -349,7 +349,75 @@ def sending_forecast(days=6):
     }
 
 
+EASTERN = ZoneInfo("America/New_York")
+
+
+def today_schedule_by_account():
+    """{sending account email: [ {name, id, from, to}, ... ]} — active
+    campaigns with a schedule block that covers *today* (checked against that
+    block's own timezone, same day-index convention as `_sends_on`), window
+    times converted to Eastern for display. Recomputed live on every call —
+    no caching, so a campaign that goes inactive or falls off today's days
+    just stops appearing next call. Sorted by start time within each account.
+    """
+    out = {}
+    for c in _paged("/campaigns"):
+        if c.get("status") != 1:
+            continue
+        sched = c.get("campaign_schedule") or {}
+        start_date = (sched.get("start_date") or "")[:10]
+        end_date = (sched.get("end_date") or "")[:10]
+        emails = _emails_of(c)
+        if not emails:
+            continue
+        for s in sched.get("schedules") or []:
+            try:
+                tz = ZoneInfo(s.get("timezone") or "UTC")
+            except Exception:
+                tz = dt.timezone.utc
+            local_date = dt.datetime.now(tz).date()
+            idx = str((local_date.weekday() + 1) % 7)   # Instantly days: 0=Sun .. 6=Sat
+            if not (s.get("days") or {}).get(idx):
+                continue
+            iso = local_date.isoformat()
+            if start_date and iso < start_date:
+                continue
+            if end_date and iso > end_date:
+                continue
+            timing = s.get("timing") or {}
+            frm_raw, to_raw = timing.get("from"), timing.get("to")
+            frm = _eastern_label(frm_raw, local_date, tz)
+            to = _eastern_label(to_raw, local_date, tz)
+            if frm is None or to is None:
+                continue
+            entry = {
+                "name": c.get("name") or c.get("id"), "id": c.get("id"),
+                "from": frm, "to": to, "_sort": frm_raw,
+            }
+            for email in emails:
+                out.setdefault(email, []).append(entry)
+    for entries in out.values():
+        entries.sort(key=lambda e: e["_sort"])
+        for e in entries:
+            e.pop("_sort", None)
+    return out
+
+
 # --- pure logic (unit-tested) ----------------------------------------------
+
+def _eastern_label(hhmm, local_date, tz):
+    """'HH:MM' in `tz` on `local_date` -> '9:30 PM'-style label in Eastern."""
+    if not hhmm:
+        return None
+    try:
+        h, m = hhmm.split(":")
+        naive = dt.datetime.combine(local_date, dt.time(int(h), int(m)))
+    except ValueError:
+        return None
+    eastern = naive.replace(tzinfo=tz).astimezone(EASTERN)
+    hour12 = eastern.hour % 12 or 12
+    ampm = "AM" if eastern.hour < 12 else "PM"
+    return f"{hour12}:{eastern.minute:02d} {ampm}"
 
 def _num(lead, *names):
     for n in names:

@@ -18,6 +18,17 @@ textarea.ed { min-width:210px; resize:vertical; line-height:1.35; white-space:pr
 td .meta { color:var(--muted); font-size:12px; margin-top:3px; }
 td.who { min-width:170px; }
 tbody.addrow .who input { display:block; margin-bottom:5px; }
+.groups-list { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
+.group-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.group-row b { min-width:90px; }
+.group-chip { display:inline-flex; align-items:center; gap:6px; background:var(--surface);
+  border:1px solid var(--ring); border-radius:20px; padding:3px 6px 3px 12px; font-size:12.5px; }
+.group-chip button { border:none; background:none; color:var(--muted); cursor:pointer;
+  font-size:13px; padding:2px 4px; line-height:1; }
+.group-chip button:hover { color:var(--bad); }
+.group-add { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.group-add input { font:inherit; padding:7px 10px; border:1px solid var(--ring); border-radius:8px;
+  background:var(--surface); color:var(--ink); }
 {% endblock %}
 
 {% block content %}
@@ -46,6 +57,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
         <th data-filter="select">Status</th>
         <th data-filter="select">Instantly</th>
         <th data-filter="select">Country</th>
+        <th data-filter="select">Region</th>
         <th data-filter="text">Location</th>
         <th data-filter="date">Initial email</th>
         <th data-filter="date">Last contact</th>
@@ -73,6 +85,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
         </td>
         <td></td>
         <td><input form="addbrand" name="country" placeholder="country"></td>
+        <td></td>
         <td><input form="addbrand" name="location" placeholder="location"></td>
         <td><input form="addbrand" name="first_contacted" placeholder="YYYY-MM-DD"></td>
         <td><input form="addbrand" name="last_contacted" placeholder="YYYY-MM-DD"></td>
@@ -101,6 +114,7 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
         <td class="c" data-f="status" data-sel="status">{{ b.status or '' }}</td>
         <td>{% if b.instantly_status %}<span class="ibadge {{ b.instantly_status|replace(' ','-') }}">{{ b.instantly_status }}</span>{% endif %}</td>
         <td class="c" data-f="country">{{ b.country or '' }}</td>
+        <td title="Set by the country's group membership below">{{ row_region.get(b.id, '') }}</td>
         <td class="c" data-f="location">{{ b.location or '' }}</td>
         <td class="c" data-f="first_contacted" data-type="date">{{ b.first_contacted or '' }}</td>
         <td class="c" data-f="last_contacted" data-type="date">{{ b.last_contacted or '' }}</td>
@@ -113,10 +127,37 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="14" style="color:var(--muted)">No brand leads yet. Add one in the row above, or import your sheet below.</td></tr>
+      <tr><td colspan="15" style="color:var(--muted)">No brand leads yet. Add one in the row above, or import your sheet below.</td></tr>
       {% endfor %}
     </tbody>
   </table>
+</div>
+
+<div class="card">
+  <h2>Country groups</h2>
+  <p class="sub">Group countries together (e.g. <b>APAC</b> = China, Taiwan, Japan…) so leads roll up into a <b>Region</b> you can filter by above, matching how your Instantly campaigns are split. A country can belong to more than one group.</p>
+  <div class="groups-list">
+    {% for gname, members in groups|groupby('group_name') %}
+    <div class="group-row">
+      <b>{{ gname }}</b>
+      {% for m in members %}
+      <span class="group-chip">{{ m.country }}
+        <form method="post" action="{{ url_for('crm_brand_groups_delete', gid=m.id) }}">
+          <button title="Remove {{ m.country }} from {{ gname }}">✕</button>
+        </form>
+      </span>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="sub" style="margin:0">No groups yet — add your first country below.</p>
+    {% endfor %}
+  </div>
+  <form method="post" action="{{ url_for('crm_brand_groups_add') }}" class="group-add">
+    <input name="group_name" placeholder="Group (e.g. APAC)" list="groupNames" required>
+    <datalist id="groupNames">{% for r in regions %}<option value="{{ r }}">{% endfor %}</datalist>
+    <input name="country" placeholder="Country (e.g. China)" required>
+    <button class="primary">+ Add to group</button>
+  </form>
 </div>
 
 <div class="card">

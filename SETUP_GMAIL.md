@@ -26,18 +26,18 @@ You do this once. Budget ~10 minutes.
 
 1. **APIs & Services → Credentials → Create credentials → OAuth client ID.**
 2. Application type: **Desktop app**. Create.
-3. **Download JSON**. Save it into this project folder (next to `app.py`) as
-   **`client_secret.json`**. (It's gitignored — never commit it.)
+3. **Download JSON**. Save it into `scripts/gmail/` (next to `connect_gmail.py`)
+   as **`client_secret.json`**. (It's gitignored — never commit it.)
 
 ## 4. Install the libraries + connect each account
 
 ```bash
 pip install -r requirements.txt
-python connect_gmail.py
+python scripts/gmail/connect_gmail.py
 ```
 
 A browser opens — sign in with a **sending** account and approve. The token is
-saved to `gmail_tokens/<address>.json`. **Run `python connect_gmail.py` again
+saved to `gmail_tokens/<address>.json`. **Run `python scripts/gmail/connect_gmail.py` again
 for every account you send from** — both Instantly mailboxes *and* the account
 you send manual outreach from. (Instantly sends through your Workspace
 mailboxes, so those sends are in Sent mail and get picked up too.)

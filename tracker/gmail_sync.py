@@ -5,11 +5,15 @@ every connected Google account, matches recipients to lead emails in the
 `channels` (influencer) and `brand_leads` (brand) tables, and records when you
 first and last emailed each lead plus a follow-up count.
 
-Auth is set up out-of-band by `connect_gmail.py` (one browser consent per
-account); tokens land in `gmail_tokens/<address>.json`. The Google client
-libraries are imported lazily so the rest of the app runs without them.
+Auth: either `scripts/gmail/connect_gmail.py` (one browser consent per
+account, run from a terminal) or the Settings page's Connect/Reconnect
+links (build_auth_url/finish_oauth below — same client_secret.json, same
+token files, just driven through this app's own server instead of a
+throwaway one). Tokens land in `gmail_tokens/<address>.json`. The Google
+client libraries are imported lazily so the rest of the app runs without
+them.
 
-Two modes:
+Two sync modes:
   - full resync (authoritative): reads ALL sent mail across every account,
     aggregates, and overwrites the three contact fields with the true values.
     Run once after connecting; safe to re-run.
@@ -27,6 +31,16 @@ from . import db
 SCOPES = ["https://www.googleapis.com/auth/gmail.metadata"]
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOKENS_DIR = os.path.join(_ROOT, "gmail_tokens")
+CLIENT_SECRET_PATH = os.path.join(_ROOT, "scripts", "gmail", "client_secret.json")
+_OAUTH_CALLBACK_PATH = "/crm/gmail/oauth/callback"
+
+# The in-app (web-flow) connect/reconnect routes redirect back to this app's
+# own http://127.0.0.1 server, never leaving the machine — safe to relax the
+# https-only default that's normally right for a real web app. The desktop
+# flow (InstalledAppFlow.run_local_server, used by connect_gmail.py) already
+# sets this internally; the web-flow Flow class below does not, so it's set
+# once here for both to share.
+os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 
 STATE = {"running": False, "current": "", "done": 0, "total": 0,
          "message": "", "last_run": None}
@@ -124,6 +138,57 @@ def _service(creds):
     return build("gmail", "v1", credentials=creds, cache_discovery=False)
 
 
+def _save_new_token(creds):
+    """Ask Gmail whose token this is, write gmail_tokens/<address>.json, and
+    return the address. Shared by connect_gmail.py (desktop flow) and
+    build_auth_url/finish_oauth (in-app web flow) below — one place that
+    decides the token filename and write format."""
+    profile = _service(creds).users().getProfile(userId="me").execute()
+    address = profile["emailAddress"]
+    os.makedirs(TOKENS_DIR, exist_ok=True)
+    with open(_token_path(address), "w", encoding="utf-8") as f:
+        f.write(creds.to_json())
+    return address
+
+
+def _oauth_flow(base_url, state=None):
+    from google_auth_oauthlib.flow import Flow
+    if not os.path.isfile(CLIENT_SECRET_PATH):
+        raise RuntimeError(
+            f"No client_secret.json at {CLIENT_SECRET_PATH} — see SETUP_GMAIL.md.")
+    return Flow.from_client_secrets_file(
+        CLIENT_SECRET_PATH, scopes=SCOPES,
+        redirect_uri=base_url.rstrip("/") + _OAUTH_CALLBACK_PATH, state=state,
+    )
+
+
+def build_auth_url(base_url, login_hint=None):
+    """Start the in-app connect/reconnect flow: returns (google_url, state).
+    Caller (the /crm/gmail/connect route) stashes `state` in the session and
+    redirects the browser to `google_url`; Google redirects back to
+    /crm/gmail/oauth/callback with a `code` for finish_oauth() to exchange.
+
+    prompt="consent" forces a fresh consent screen (and therefore a fresh
+    refresh token) even for an account that already granted access before —
+    the whole point when reconnecting a dead one. login_hint pre-selects a
+    specific Google account in the picker when reconnecting a known address;
+    omitted when connecting a brand-new one.
+    """
+    flow = _oauth_flow(base_url)
+    return flow.authorization_url(
+        access_type="offline", prompt="consent", include_granted_scopes="true",
+        login_hint=login_hint or None,
+    )
+
+
+def finish_oauth(base_url, authorization_response_url, state):
+    """Exchange the callback's `code` for tokens and save them. Returns the
+    connected account's email address."""
+    flow = _oauth_flow(base_url, state=state)
+    flow.fetch_token(authorization_response=authorization_response_url)
+    return _save_new_token(flow.credentials)
+
+
 def _execute(request, tries=6):
     """Run a Gmail API request, retrying transient errors with backoff.
 
@@ -204,44 +269,79 @@ def _save_watermark(conn, account, epoch, result):
 
 # --- orchestration ----------------------------------------------------------
 
+def _friendly_error(exc):
+    """Short, UI-safe summary of a per-account sync failure. A dead/revoked
+    refresh token is the recurring real-world case (Google session policies,
+    a password change, manual revoke) — call that out specifically since the
+    fix is a one-click reconnect, not a bug to chase."""
+    from google.auth.exceptions import RefreshError
+    if isinstance(exc, RefreshError):
+        return "Reconnect this account — token expired or revoked"
+    return f"Sync failed: {exc}"
+
+
 def sync(authoritative=False):
-    """Run a sync across all connected accounts. Returns (ok, message)."""
+    """Run a sync across all connected accounts. Returns (ok, message).
+
+    Each account's work is isolated in its own try/except: one dead token
+    used to abort the whole run, silently leaving every account after it in
+    `accounts` (alphabetical order) un-synced too. Now a failing account is
+    recorded with a friendly per-account error (via the existing
+    `last_result` field — no watermark advance, so the next successful sync
+    just resumes where it left off) and the loop continues. `ok=False` only
+    when every account failed.
+    """
     accounts = list_accounts()
     if not accounts:
-        STATE["message"] = "No Gmail accounts connected — run connect_gmail.py first."
+        STATE["message"] = "No Gmail accounts connected — use the Connect button on Settings."
         return False, STATE["message"]
     STATE.update(running=True, done=0, total=len(accounts), current="", message="")
     conn = db.connect()
     try:
+        failed = []
         if authoritative:
             all_sends, newest_by_acct = [], {}
             for i, acct in enumerate(accounts):
                 STATE.update(current=acct, done=i)
-                svc = _service(_creds(_token_path(acct)))
-                sends, newest = _collect_sends(
-                    svc, 0, progress=lambda n, a=acct: STATE.update(message=f"{a}: {n} sent read"))
+                try:
+                    svc = _service(_creds(_token_path(acct)))
+                    sends, newest = _collect_sends(
+                        svc, 0, progress=lambda n, a=acct: STATE.update(message=f"{a}: {n} sent read"))
+                except Exception as e:
+                    failed.append(acct)
+                    _save_watermark(conn, acct, _watermark(conn, acct), _friendly_error(e))
+                    continue
                 all_sends += sends
                 newest_by_acct[acct] = newest
             n = reconcile(conn, aggregate(all_sends), authoritative=True)
             for acct, newest in newest_by_acct.items():
                 _save_watermark(conn, acct, newest, "full resync")
-            msg = f"Full resync: {n} lead field(s) updated from {len(accounts)} account(s)."
+            ok_count = len(accounts) - len(failed)
+            msg = f"Full resync: {n} lead field(s) updated from {ok_count}/{len(accounts)} account(s)."
         else:
             total = 0
             for i, acct in enumerate(accounts):
                 STATE.update(current=acct, done=i)
                 wm = _watermark(conn, acct)
-                svc = _service(_creds(_token_path(acct)))
-                sends, newest = _collect_sends(
-                    svc, wm, progress=lambda n, a=acct: STATE.update(message=f"{a}: {n} new read"))
+                try:
+                    svc = _service(_creds(_token_path(acct)))
+                    sends, newest = _collect_sends(
+                        svc, wm, progress=lambda n, a=acct: STATE.update(message=f"{a}: {n} new read"))
+                except Exception as e:
+                    failed.append(acct)
+                    _save_watermark(conn, acct, wm, _friendly_error(e))
+                    continue
                 t = reconcile(conn, aggregate(sends), authoritative=False)
                 total += t
                 _save_watermark(conn, acct, max(newest, wm or 0), f"{t} update(s)")
-            msg = f"Sync: {total} lead field(s) updated."
+            ok_count = len(accounts) - len(failed)
+            msg = f"Sync: {total} lead field(s) updated across {ok_count}/{len(accounts)} account(s)."
+        if failed:
+            msg += f" {len(failed)} need reconnecting: {', '.join(failed)}."
         STATE.update(message=msg, done=len(accounts))
         STATE["last_run"] = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
-        return True, msg
-    except Exception as e:  # network / auth / quota — surface, don't crash the app
+        return bool(ok_count), msg
+    except Exception as e:  # anything outside the per-account try (DB, etc.) — surface, don't crash
         import traceback
         traceback.print_exc()  # show the real cause in the app's terminal
         STATE["message"] = f"Sync error: {e}"

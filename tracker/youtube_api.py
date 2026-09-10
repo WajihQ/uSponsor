@@ -15,6 +15,7 @@ detection stays on yt-dlp regardless of whether this is configured.
 """
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -98,12 +99,28 @@ def _get(path, params, tries=3):
             raise
 
 
+_ISO8601_DURATION_RE = re.compile(
+    r"^PT(?:(?P<h>\d+)H)?(?:(?P<m>\d+)M)?(?:(?P<s>\d+)S)?$"
+)
+
+
+def _parse_duration(iso):
+    """ISO 8601 duration ('PT1M30S') -> whole seconds, or None if unparseable
+    (e.g. a livestream still in progress reports no duration)."""
+    m = _ISO8601_DURATION_RE.match(iso or "")
+    if not m or not any(m.groups()):
+        return None
+    h, mi, s = (int(g) if g else 0 for g in m.groups())
+    return h * 3600 + mi * 60 + s
+
+
 def _to_ytdlp_shape(item):
     """Reshape a Data API `videos` item into the same keys scraper._store_video
     already expects from yt-dlp's extract_info, so callers don't need to care
     which source filled them in."""
     snip = item.get("snippet", {}) or {}
     stats = item.get("statistics", {}) or {}
+    content = item.get("contentDetails", {}) or {}
     published = snip.get("publishedAt", "") or ""  # "2026-07-20T14:00:00Z"
     upload_date = published[:10].replace("-", "") if published else None
     return {
@@ -115,6 +132,7 @@ def _to_ytdlp_shape(item):
         "view_count": int(stats["viewCount"]) if "viewCount" in stats else None,
         "like_count": int(stats["likeCount"]) if "likeCount" in stats else None,
         "comment_count": int(stats["commentCount"]) if "commentCount" in stats else None,
+        "duration": _parse_duration(content.get("duration")),
     }
 
 
@@ -128,7 +146,7 @@ def videos_batch(video_ids):
     ids = list(dict.fromkeys(video_ids))  # de-dupe, preserve order
     for i in range(0, len(ids), 50):
         chunk = ids[i:i + 50]
-        data = _get("videos", {"id": ",".join(chunk), "part": "snippet,statistics"})
+        data = _get("videos", {"id": ",".join(chunk), "part": "snippet,statistics,contentDetails"})
         for item in data.get("items", []):
             out[item["id"]] = _to_ytdlp_shape(item)
     return out

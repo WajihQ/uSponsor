@@ -1,6 +1,6 @@
 """Validate the sending model against finished campaigns' real send history.
 
-    python verify_campaigns.py
+    python scripts/instantly/verify_campaigns.py   (run from the repo root)
 
 Read-only. For each completed/paused campaign it pulls actual emails-sent-per-day
 and compares to the model: daily_limit on scheduled weekdays. It separates the
@@ -8,8 +8,11 @@ STEADY pattern (days at/near the peak) from stragglers (the ramp-down tail and
 limit-staggered spillover) so outliers don't distort the check.
 """
 import datetime as dt
+import os
 import statistics as st
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 sys.stdout.reconfigure(encoding="utf-8")
 from tracker import instantly as ins

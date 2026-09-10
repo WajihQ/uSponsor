@@ -84,6 +84,8 @@ CREATE TABLE IF NOT EXISTS videos (
     view_count  INTEGER,                -- stats captured at scan time
     like_count  INTEGER,
     comment_count INTEGER,
+    duration_seconds INTEGER,           -- from yt-dlp/Data API contentDetails
+    is_short    INTEGER,                -- 1 = Shorts-length (<=3min); NULL = not yet classified
     sb_checked  INTEGER NOT NULL DEFAULT 0,  -- SponsorBlock queried yet?
     sb_sponsored INTEGER,               -- 1 = has a sponsor segment
     sb_segments TEXT,                   -- JSON [[start,end],...] seconds
@@ -103,6 +105,13 @@ CREATE TABLE IF NOT EXISTS sponsorships (
 CREATE TABLE IF NOT EXISTS brand_aliases (
     alias_key TEXT PRIMARY KEY,                   -- normalized key of the variant name
     canonical TEXT NOT NULL                       -- display name it consolidates into
+);
+
+CREATE TABLE IF NOT EXISTS country_groups (
+    id         INTEGER PRIMARY KEY,
+    group_name TEXT NOT NULL,                     -- e.g. "APAC" -- free text, owner-defined
+    country    TEXT NOT NULL,                     -- e.g. "China" -- matched against brand_leads.country
+    UNIQUE (group_name, country)
 );
 
 CREATE TABLE IF NOT EXISTS crm_sync (
@@ -164,12 +173,20 @@ def init_db():
             conn.execute("ALTER TABLE videos ADD COLUMN view_count INTEGER")
             conn.execute("ALTER TABLE videos ADD COLUMN like_count INTEGER")
             conn.execute("ALTER TABLE videos ADD COLUMN comment_count INTEGER")
+        if "duration_seconds" not in vcols:
+            conn.execute("ALTER TABLE videos ADD COLUMN duration_seconds INTEGER")
+            conn.execute("ALTER TABLE videos ADD COLUMN is_short INTEGER")
         if "sb_checked" not in vcols:
             conn.execute("ALTER TABLE videos ADD COLUMN sb_checked INTEGER NOT NULL DEFAULT 0")
             conn.execute("ALTER TABLE videos ADD COLUMN sb_sponsored INTEGER")
             conn.execute("ALTER TABLE videos ADD COLUMN sb_segments TEXT")
             conn.execute("ALTER TABLE videos ADD COLUMN review TEXT")
             conn.execute("ALTER TABLE videos ADD COLUMN review_note TEXT")
+        if "stats_checked_at" not in vcols:
+            # when view/like/comment_count were last fetched — NULL for
+            # everything stored before this column existed, which is
+            # correct: those numbers are exactly as stale as "unknown"
+            conn.execute("ALTER TABLE videos ADD COLUMN stats_checked_at TEXT")
         bcols = {r["name"] for r in conn.execute("PRAGMA table_info(brands)")}
         if bcols and "kind" not in bcols:
             conn.execute("ALTER TABLE brands ADD COLUMN kind TEXT NOT NULL DEFAULT 'known'")
@@ -347,6 +364,15 @@ def ensure_known_brand(conn, name):
 def alias_map(conn):
     """{alias_key: canonical display name} for detection-time consolidation."""
     return {r["alias_key"]: r["canonical"] for r in conn.execute("SELECT * FROM brand_aliases")}
+
+
+def country_group_map(conn):
+    """{country: [group_name, ...]} -- a country can belong to more than one
+    group (e.g. "Australia" in both APAC and ANZ)."""
+    m = {}
+    for r in conn.execute("SELECT group_name, country FROM country_groups ORDER BY group_name"):
+        m.setdefault(r["country"], []).append(r["group_name"])
+    return m
 
 
 def apply_alias(brand, amap):

@@ -1,13 +1,16 @@
 """Read-only probe of the Instantly sending-capacity data shapes.
 
-    python diagnose_instantly_sending.py
+    python scripts/instantly/diagnose_instantly_sending.py   (run from the repo root)
 
 Changes nothing. Dumps one campaign object, one sending-account object, and
 tries the analytics endpoints, so we can map fields for a "sending load" view
 (daily limits, active status, which mailboxes a campaign uses, sends per day).
 """
 import json
+import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 sys.stdout.reconfigure(encoding="utf-8")
 from tracker import instantly as ins

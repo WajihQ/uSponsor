@@ -31,7 +31,7 @@ instead set an `INSTANTLY_API_KEY` environment variable.)
 ## 3. Confirm it works
 
 ```bash
-python diagnose_instantly.py
+python scripts/instantly/diagnose_instantly.py
 ```
 
 This lists your campaigns, prints one real lead's fields, shows the status the
