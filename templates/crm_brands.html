@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}Brand CRM — uSponsor{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block style %}
+.pills { display:flex; gap:16px; margin:2px 0 0; color:var(--ink-2); font-size:13px; align-items:center; flex-wrap:wrap; }
+.pills b { color:var(--ink); }
+.pills .spacer { flex:1; }
+.gsearch { font:inherit; padding:7px 10px; border:1px solid var(--ring); border-radius:8px;
+  background:var(--surface); color:var(--ink); min-width:220px; }
+.ed { font:inherit; width:100%; min-width:140px; border:1px solid transparent; border-radius:6px;
+  padding:6px 8px; background:transparent; color:var(--ink); }
+.ed:hover { border-color:var(--grid); }
+.ed:focus { border-color:var(--accent); background:var(--surface); outline:none; }
+select.ed { min-width:120px; }
+.ed.dt { min-width:110px; font-variant-numeric:tabular-nums; }
+textarea.ed { min-width:210px; resize:vertical; line-height:1.35; white-space:pre-wrap;
+  field-sizing:content; max-height:120px; }
+td .meta { color:var(--muted); font-size:12px; margin-top:3px; }
+td.who { min-width:170px; }
+tbody.addrow .who input { display:block; margin-bottom:5px; }
+.groups-list { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
+.group-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.group-row b { min-width:90px; }
+.group-chip { display:inline-flex; align-items:center; gap:6px; background:var(--surface);
+  border:1px solid var(--ring); border-radius:20px; padding:3px 6px 3px 12px; font-size:12.5px; }
+.group-chip button { border:none; background:none; color:var(--muted); cursor:pointer;
+  font-size:13px; padding:2px 4px; line-height:1; }
+.group-chip button:hover { color:var(--bad); }
+.group-add { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.group-add input { font:inherit; padding:7px 10px; border:1px solid var(--ring); border-radius:8px;
+  background:var(--surface); color:var(--ink); }
+{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <h2>Brand CRM</h2>
+  <p class="sub">Your brand-side outreach contacts — separate from the sponsor-detection Brands tab. Edit any field inline, click a column heading to sort, and use the filter boxes under each heading, like a spreadsheet.</p>
+  <div class="pills">
+    <span><b>{{ counts.total }}</b> contacts</span>
+    <span><b>{{ counts.emailed }}</b> contacted</span>
+    <span><b>{{ counts.no_email }}</b> missing an email</span>
+    <span class="spacer"></span>
+    <input class="gsearch" id="brandSearch" type="text" placeholder="Search all columns…">
+  </div>
+</div>
+
+<div class="card scroll">
+  <table data-sheet data-search="brandSearch" data-editurl="{{ url_for('crm_brands_edit', bid=0) }}">
+    <thead>
+      <tr>
+        <th data-filter="none">Person</th>
+        <th data-filter="text">Brand</th>
+        <th data-filter="none">Role</th>
+        <th data-filter="none">Email</th>
+        <th data-filter="select">Niche</th>
+        <th data-filter="select">Status</th>
+        <th data-filter="select">Instantly</th>
+        <th data-filter="select">Country</th>
+        <th data-filter="select">Region</th>
+        <th data-filter="text">Location</th>
+        <th data-filter="date">Initial email</th>
+        <th data-filter="date">Last contact</th>
+        <th data-filter="text">Influencers</th>
+        <th data-filter="text">Comments</th>
+        <th data-sort="none" data-filter="none"></th>
+      </tr>
+    </thead>
+    <tbody class="addrow">
+      <tr>
+        <td class="who">
+          <form id="addbrand" action="{{ url_for('crm_brands_add') }}" method="post"></form>
+          <input form="addbrand" name="person" placeholder="person">
+          <input form="addbrand" name="linkedin" placeholder="LinkedIn URL">
+        </td>
+        <td><input form="addbrand" name="brand" placeholder="brand *"></td>
+        <td><input form="addbrand" name="role" placeholder="role"></td>
+        <td><input form="addbrand" name="email" placeholder="email" type="email"></td>
+        <td><input form="addbrand" name="niche" placeholder="niche"></td>
+        <td>
+          <select form="addbrand" name="status">
+            <option value="">status…</option>
+            {% for s in status_options %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+          </select>
+        </td>
+        <td></td>
+        <td><input form="addbrand" name="country" placeholder="country"></td>
+        <td></td>
+        <td><input form="addbrand" name="location" placeholder="location"></td>
+        <td><input form="addbrand" name="first_contacted" placeholder="YYYY-MM-DD"></td>
+        <td><input form="addbrand" name="last_contacted" placeholder="YYYY-MM-DD"></td>
+        <td><input form="addbrand" name="influencers" placeholder="influencers"></td>
+        <td><input form="addbrand" name="comments" placeholder="comments"></td>
+        <td><button form="addbrand" class="primary">Add</button></td>
+      </tr>
+    </tbody>
+    <tbody class="data">
+      {% for b in rows %}
+      <tr data-id="{{ b.id }}">
+        <td class="who">
+          <span class="c" data-f="person">{{ b.person or '' }}</span>
+          <div class="whofields">
+            <span class="c cq" data-f="linkedin" data-ph="+ LinkedIn">{{ b.linkedin or '' }}</span>
+            {% if b.linkedin %}<a href="{{ b.linkedin }}" target="_blank" rel="noopener" class="lnopen" title="Open LinkedIn">↗</a>{% endif %}
+          </div>
+        </td>
+        <td class="c" data-f="brand">{{ b.brand or '' }}</td>
+        <td class="c c-wrap" data-f="role">{{ b.role or '' }}</td>
+        <td class="emailcell">
+          <span class="c" data-f="email">{{ b.email or '' }}</span>
+          {% if b.email %}<button type="button" class="copybtn" title="Copy email">📋</button>{% endif %}
+        </td>
+        <td class="c" data-f="niche">{{ b.niche or '' }}</td>
+        <td class="c" data-f="status" data-sel="status">{{ b.status or '' }}</td>
+        <td>{% if b.instantly_status %}<span class="ibadge {{ b.instantly_status|replace(' ','-') }}">{{ b.instantly_status }}</span>{% endif %}</td>
+        <td class="c" data-f="country">{{ b.country or '' }}</td>
+        <td title="Set by the country's group membership below">{{ row_region.get(b.id, '') }}</td>
+        <td class="c" data-f="location">{{ b.location or '' }}</td>
+        <td class="c" data-f="first_contacted" data-type="date">{{ b.first_contacted or '' }}</td>
+        <td class="c" data-f="last_contacted" data-type="date">{{ b.last_contacted or '' }}</td>
+        <td class="c c-multi" data-f="influencers">{{ b.influencers or '' }}</td>
+        <td class="c c-multi" data-f="comments">{{ b.comments or '' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('crm_brands_delete', bid=b.id) }}" data-ajax="remove-row" data-confirm="Remove this brand lead?" data-done="Removed">
+            <button class="danger" title="Remove">✕</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="15" style="color:var(--muted)">No brand leads yet. Add one in the row above, or import your sheet below.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Country groups</h2>
+  <p class="sub">Group countries together (e.g. <b>APAC</b> = China, Taiwan, Japan…) so leads roll up into a <b>Region</b> you can filter by above, matching how your Instantly campaigns are split. A country can belong to more than one group.</p>
+  <div class="groups-list">
+    {% for gname, members in groups|groupby('group_name') %}
+    <div class="group-row">
+      <b>{{ gname }}</b>
+      {% for m in members %}
+      <span class="group-chip">{{ m.country }}
+        <form method="post" action="{{ url_for('crm_brand_groups_delete', gid=m.id) }}">
+          <button title="Remove {{ m.country }} from {{ gname }}">✕</button>
+        </form>
+      </span>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="sub" style="margin:0">No groups yet — add your first country below.</p>
+    {% endfor %}
+  </div>
+  <form method="post" action="{{ url_for('crm_brand_groups_add') }}" class="group-add">
+    <input name="group_name" placeholder="Group (e.g. APAC)" list="groupNames" required>
+    <datalist id="groupNames">{% for r in regions %}<option value="{{ r }}">{% endfor %}</datalist>
+    <input name="country" placeholder="Country (e.g. China)" required>
+    <button class="primary">+ Add to group</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Import from your Google Sheet</h2>
+  <p class="sub">Export the brand sheet as CSV (File → Download → CSV) and upload it here. Deduped by email, then by person + brand; only blank fields are filled. Safe to re-run.</p>
+  <form method="post" action="{{ url_for('crm_brands_import') }}" enctype="multipart/form-data" style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+    <input type="file" name="file" accept=".csv,.txt" required>
+    <button class="primary">Import CSV</button>
+  </form>
+</div>
+
+<script>
+// option lists for the click-to-edit dropdowns (status is a select cell)
+window.__sheetOpts = { status: {{ status_options | tojson }} };
+</script>
+{% endblock %}

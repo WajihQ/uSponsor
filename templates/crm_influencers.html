@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Influencer CRM — uSponsor{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block style %}
+.pills { display:flex; gap:16px; margin:2px 0 0; color:var(--ink-2); font-size:13px; align-items:center; flex-wrap:wrap; }
+.pills b { color:var(--ink); }
+.pills .spacer { flex:1; }
+.gsearch { font:inherit; padding:7px 10px; border:1px solid var(--ring); border-radius:8px;
+  background:var(--surface); color:var(--ink); min-width:220px; }
+.ed { font:inherit; width:100%; min-width:130px; border:1px solid transparent; border-radius:6px;
+  padding:6px 8px; background:transparent; color:var(--ink); }
+.ed:hover { border-color:var(--grid); }
+.ed:focus { border-color:var(--accent); background:var(--surface); outline:none; }
+select.ed { min-width:120px; }
+.ed.dt { min-width:110px; font-variant-numeric:tabular-nums; }
+textarea.ed { min-width:220px; resize:vertical; line-height:1.35; white-space:pre-wrap;
+  field-sizing:content; max-height:120px; }
+td .meta { color:var(--muted); font-size:12px; margin-top:3px; }
+td.who { min-width:200px; }
+.who .nm { font-weight:600; max-width:200px; }
+.fu { text-align:center; font-variant-numeric:tabular-nums; color:var(--ink-2); }
+tbody.addrow .who input { display:block; margin-bottom:5px; }
+.whoactions { margin-top:6px; display:flex; gap:8px; align-items:center; }
+.closebtn { font:inherit; font-size:11.5px; padding:2px 9px; border:1px solid var(--ring);
+  border-radius:999px; background:var(--surface); color:var(--muted); cursor:pointer; }
+.closebtn.on { border-color:var(--good); color:var(--good); background:rgba(0,99,0,.10); font-weight:600; }
+.closebtn:hover { border-color:var(--accent); color:var(--accent); }
+.delbtn, .rescanbtn { border:none; background:transparent; color:var(--muted); cursor:pointer; font-size:12px; padding:2px 4px; }
+.delbtn:hover { color:var(--bad); }
+.rescanbtn:hover { color:var(--accent); }
+{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <h2>Influencer CRM</h2>
+  <p class="sub">Your outreach list, living on top of the channels you scan. Edit any field inline (saves as you type), click a column heading to sort, and use the filter boxes under each heading — just like a spreadsheet.</p>
+  <div class="pills">
+    <span><b>{{ counts.total }}</b> influencers</span>
+    <span><b>{{ counts.emailed }}</b> contacted</span>
+    <span><b>{{ counts.no_email }}</b> missing an email</span>
+    <span class="spacer"></span>
+    <input class="gsearch" id="inflSearch" type="text" placeholder="Search all columns…">
+  </div>
+</div>
+
+<div class="card scroll">
+  <table data-sheet data-search="inflSearch" data-editurl="{{ url_for('crm_influencers_edit', cid=0) }}">
+    <thead>
+      <tr>
+        <th data-filter="text">Influencer</th>
+        <th data-filter="text">Email</th>
+        <th data-filter="text">Instagram</th>
+        <th data-filter="select">Status</th>
+        <th data-filter="select">Revisit</th>
+        <th data-filter="date">Initial email</th>
+        <th data-filter="date">Last contact</th>
+        <th data-filter="none">Follow-ups</th>
+        <th data-filter="select">Instantly</th>
+        <th data-filter="text">Notes</th>
+      </tr>
+    </thead>
+    <tbody class="addrow">
+      <tr>
+        <td class="who">
+          <form id="addinfl" action="{{ url_for('crm_influencers_add') }}" method="post"></form>
+          <input form="addinfl" name="link" placeholder="YouTube URL/@handle or Instagram link *" required>
+          <input form="addinfl" name="name" placeholder="name (optional)">
+          <input form="addinfl" name="niche" placeholder="niche">
+          <input form="addinfl" name="subniche" placeholder="sub-niche">
+          <input form="addinfl" name="agency" placeholder="agency">
+        </td>
+        <td><input form="addinfl" name="email" placeholder="email" type="email"></td>
+        <td><input form="addinfl" name="instagram" placeholder="@ig"></td>
+        <td>
+          <select form="addinfl" name="crm_status">
+            <option value="">status…</option>
+            {% for s in status_options %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+          </select>
+        </td>
+        <td>
+          <select form="addinfl" name="revisit_later">
+            <option value="">revisit…</option>
+            {% for r in ['yes','maybe','no'] %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+          </select>
+        </td>
+        <td><input form="addinfl" name="first_contacted" placeholder="YYYY-MM-DD"></td>
+        <td><input form="addinfl" name="last_contacted" placeholder="YYYY-MM-DD"></td>
+        <td><button form="addinfl" class="primary">Add</button></td>
+        <td></td>
+        <td><input form="addinfl" name="notes" placeholder="notes"></td>
+      </tr>
+    </tbody>
+    <tbody class="data">
+      {% for c in rows %}
+      <tr data-id="{{ c.id }}">
+        <td class="who">
+          <span class="c nm" data-f="name">{{ c.name or c.input_url }}</span>
+          <a href="{{ url_for('creator_detail', cid=c.id) }}" class="lnopen" title="Open profile">↗</a>
+          {% if c.subscribers or c.spons or avg_views.get(c.id) or scanned.get(c.id) %}
+          <div class="meta">
+            {% if c.subscribers %}{{ '{:,}'.format(c.subscribers) }} subs{% endif %}
+            {% if avg_views.get(c.id) %}{% if c.subscribers %} · {% endif %}{{ avg_views[c.id] }} avg views{% endif %}
+            {% if c.spons %} · {{ c.spons }} sponsors{% endif %}
+            {% if scanned.get(c.id) %} · scanned {{ scanned[c.id] }}{% else %} · <span style="color:var(--muted)">never scanned</span>{% endif %}
+          </div>
+          {% endif %}
+          <div class="whofields">
+            <span class="c cq" data-f="niche" data-ph="niche">{{ c.niche or '' }}</span>
+            <span class="sep">/</span>
+            <span class="c cq" data-f="subniche" data-ph="sub-niche">{{ c.subniche or '' }}</span>
+            <span class="sep">·</span>
+            <span class="c cq" data-f="agency" data-ph="agency">{{ c.agency or '' }}</span>
+          </div>
+          <div class="whoactions">
+            <form method="post" action="{{ url_for('channels_status', cid=c.id) }}" data-ajax="toggle-closed" data-done="Status updated">
+              <input type="hidden" name="status" value="{{ 'prospect' if c.status == 'closed' else 'closed' }}">
+              <button type="submit" class="closebtn {{ 'on' if c.status == 'closed' }}">{{ '✓ signed' if c.status == 'closed' else 'mark closed' }}</button>
+            </form>
+            <form method="post" action="{{ url_for('channels_reset', cid=c.id) }}" data-ajax="save" data-confirm="Clear this creator's scanned videos so the next scan re-fetches them fresh? Removes their current sponsorship detections." data-done="Cleared — next scan re-fetches">
+              <button type="submit" class="rescanbtn" title="Re-scan fresh (clear &amp; refetch on next scan)">↻</button>
+            </form>
+            <form method="post" action="{{ url_for('channels_delete', cid=c.id) }}" data-ajax="remove-row" data-confirm="Delete this creator and ALL their scanned videos & sponsorships? This can't be undone." data-done="Creator removed">
+              <button type="submit" class="delbtn" title="Delete creator">✕</button>
+            </form>
+          </div>
+        </td>
+        <td class="emailcell">
+          <span class="c" data-f="email">{{ c.email or '' }}</span>
+          {% if c.email %}<button type="button" class="copybtn" title="Copy email">📋</button>{% endif %}
+        </td>
+        <td class="c" data-f="instagram">{{ c.instagram or '' }}</td>
+        <td class="c" data-f="crm_status" data-sel="status">{{ c.crm_status or '' }}</td>
+        <td class="c" data-f="revisit_later" data-sel="revisit">{{ c.revisit_later or '' }}</td>
+        <td class="c" data-f="first_contacted" data-type="date">{{ c.first_contacted or '' }}</td>
+        <td class="c" data-f="last_contacted" data-type="date">{{ c.last_contacted or '' }}</td>
+        <td class="fu">{{ c.followup_count or 0 }}</td>
+        <td>{% if c.instantly_status %}<span class="ibadge {{ c.instantly_status|replace(' ','-') }}">{{ c.instantly_status }}</span>{% endif %}</td>
+        <td class="c c-multi" data-f="notes">{{ c.notes or '' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="10" style="color:var(--muted)">No influencers yet. Add one in the row above, or import your sheet below.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Import from your Google Sheet</h2>
+  <p class="sub">Export the influencer sheet as CSV (File → Download → CSV) and upload it here. Rows are matched to channels you already scan by their link, so nothing gets duplicated; only blank fields are filled in. Safe to re-run.</p>
+  <form method="post" action="{{ url_for('crm_influencers_import') }}" enctype="multipart/form-data" style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+    <input type="file" name="file" accept=".csv,.txt" required>
+    <button class="primary">Import CSV</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>YouTube scan auth
+    {% if cookies %}<span style="color:var(--good); font-size:13px; font-weight:600">· authenticated ({{ cookies }})</span>
+    {% elif cookies_broken %}<span style="color:var(--bad); font-size:13px; font-weight:600">· {{ cookies_broken }} is corrupt — scanning unauthenticated, re-upload below</span>
+    {% else %}<span style="color:var(--bad); font-size:13px; font-weight:600">· anonymous — low rate limits</span>{% endif %}
+  </h2>
+  <p class="sub">Scanning many channels anonymously trips YouTube's "confirm you're not a bot" throttle (videos come back empty). Upload your signed-in YouTube <b>cookies.txt</b> once and every scan runs authenticated with far higher limits. Export it with a browser extension like <b>Get cookies.txt LOCALLY</b> while logged in to youtube.com. Stored locally, gitignored. If it ever comes back corrupt (e.g. an interrupted upload or an unclean shutdown), scans now fall back to unauthenticated instead of failing outright — this banner will say so; just re-upload a fresh export.</p>
+  <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+    <form method="post" action="{{ url_for('scan_cookies_upload') }}" enctype="multipart/form-data" style="display:flex; gap:12px; align-items:center">
+      <input type="file" name="file" accept=".txt" required>
+      <button class="primary">{{ 'Replace cookies.txt' if cookies else 'Upload cookies.txt' }}</button>
+    </form>
+    {% if cookies %}
+    <form method="post" action="{{ url_for('scan_cookies_clear') }}" data-ajax="save" data-done="Cookies removed" data-confirm="Remove the saved YouTube cookies? Scans will go back to anonymous.">
+      <button class="danger" type="submit">Remove</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Backfill scan</h2>
+  <p class="sub">Pull older uploads for every creator (newest-to-oldest) to deepen sponsor history. Slow — deep backfills over many channels can take a while. Regular <b>Scan now</b> (top-right) keeps things current.</p>
+  <form method="post" action="{{ url_for('scan') }}" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+    <input type="hidden" name="mode" value="backfill">
+    <label style="font-size:13px; color:var(--ink-2)">Go back
+      <select name="years" style="font:inherit; padding:6px 8px; border:1px solid var(--ring); border-radius:8px; background:var(--surface); color:var(--ink)">
+        {% for y in range(1, 6) %}<option value="{{ y }}">{{ y }} year{{ 's' if y > 1 }}</option>{% endfor %}
+      </select>
+    </label>
+    <button class="primary" {{ 'disabled' if scan.running }}>Start backfill</button>
+  </form>
+</div>
+
+<script>
+// option lists for the click-to-edit dropdowns (Status + Revisit are selects)
+window.__sheetOpts = { status: {{ status_options | tojson }}, revisit: ['yes', 'maybe', 'no'] };
+</script>
+{% endblock %}

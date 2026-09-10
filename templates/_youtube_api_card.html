@@ -1,0 +1,15 @@
+<div class="card">
+  <h2>YouTube Data API</h2>
+  <p class="sub">Primary source for video/channel metadata (views, likes, comments, uploads) — free quota, not subject to the cookie-scraper's throttling. yt-dlp/cookies is the automatic fallback whenever this isn't configured, a lookup fails, or the daily quota runs out.</p>
+  {% if youtube_api.configured %}
+  <div class="pills">
+    {% if youtube_api.quota_exhausted_until %}
+    <span style="color:var(--bad); font-weight:600">⚠ daily quota exhausted — falling back to cookies until it resets</span>
+    {% else %}
+    <span>configured and available</span>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="sub">Not connected. Put your key in <code>youtube_api.json</code> as <code>{"api_key": "…"}</code> in the project folder (or set <code>YOUTUBE_API_KEY</code>), then reload. Until then, all metadata comes from yt-dlp/cookies.</p>
+  {% endif %}
+</div>

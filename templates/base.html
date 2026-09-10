@@ -41,6 +41,7 @@ button.primary { background:var(--accent); color:var(--accent-ink); border-color
 button.danger { color:var(--bad); }
 button:disabled { opacity:.55; cursor:default; }
 main { max-width:1180px; margin:0 auto; padding:20px 22px 60px; }
+main.wide { max-width:none; }  /* CRM tables use the whole window */
 .card { background:var(--surface); border:1px solid var(--ring); border-radius:12px;
         padding:16px 18px; margin-bottom:20px; }
 .card h2 { margin:0 0 4px; font-size:15px; }
@@ -59,12 +60,85 @@ td { padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top; 
 #scanStatus .dot { display:inline-block; width:8px; height:8px; border-radius:50%;
   background:var(--accent); margin-right:6px; animation:pulse 1.2s infinite; }
 @keyframes pulse { 50% { opacity:.3; } }
+#throttleWarn { font-size:12.5px; color:var(--bad); font-weight:600; }
+#throttleWarn:empty { display:none; }
 #toast { position:fixed; bottom:22px; right:22px; z-index:50; background:var(--ink);
   color:var(--page); padding:10px 16px; border-radius:10px; font-size:13.5px; font-weight:500;
   box-shadow:0 4px 18px rgba(0,0,0,.25); opacity:0; transform:translateY(8px);
   transition:opacity .18s, transform .18s; pointer-events:none; max-width:340px; }
 #toast.show { opacity:1; transform:none; }
 .fading { transition:opacity .25s; opacity:0; }
+/* spreadsheet-style CRM tables: sortable headers + per-column filters */
+th.sortable { cursor:pointer; user-select:none; }
+th.sortable:hover { color:var(--ink); }
+th .arrow { color:var(--accent); font-size:11px; margin-left:2px; }
+tr.filterrow td { padding:4px 8px 7px; border-bottom:1px solid var(--axis);
+  position:sticky; background:var(--surface); }
+.colfilter { width:100%; min-width:64px; font:inherit; font-size:12px; padding:4px 6px;
+  border:1px solid var(--ring); border-radius:6px; background:var(--page); color:var(--ink); }
+.sortind { font-size:10px; margin-left:4px; color:var(--axis); }
+th.sortable:hover .sortind { color:var(--ink-2); }
+.sortind.act { color:var(--accent); }
+.mfilter { position:relative; }
+.mfbtn { width:100%; min-width:84px; text-align:left; font:inherit; font-size:12px; padding:4px 8px;
+  border:1px solid var(--ring); border-radius:6px; background:var(--page); color:var(--ink);
+  cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mfbtn.on { border-color:var(--accent); color:var(--accent); font-weight:600; }
+.mfpanel { display:none; position:absolute; z-index:20; top:100%; left:0; min-width:170px;
+  max-height:280px; overflow:auto; background:var(--surface); border:1px solid var(--ring);
+  border-radius:8px; box-shadow:0 8px 22px rgba(0,0,0,.22); padding:6px; margin-top:3px; }
+.mfilter.open .mfpanel { display:block; }
+.mfpanel label { display:flex; align-items:center; gap:7px; padding:4px 6px; font-size:12.5px;
+  white-space:nowrap; cursor:pointer; border-radius:5px; font-weight:400; }
+.mfpanel label:hover { background:var(--chip-bg); }
+.mfpanel .mfclear { color:var(--muted); font-size:11.5px; cursor:pointer; padding:3px 6px 5px; }
+.mfpanel .mfclear:hover { color:var(--accent); }
+.dfilter1 { width:100%; min-width:104px; font:inherit; font-size:11.5px; padding:3px 4px;
+  border:1px solid var(--ring); border-radius:6px; background:var(--page); color:var(--ink);
+  font-variant-numeric:tabular-nums; }
+.pager { display:flex; gap:14px; align-items:center; margin-top:10px; font-size:13px; color:var(--ink-2); flex-wrap:wrap; }
+.pager a { font-weight:600; cursor:pointer; }
+.pager .dis { color:var(--muted); }
+/* click-to-edit text cells: compact, size to content, edit on click */
+td.c { max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:text; }
+td.c.c-multi { max-width:260px; white-space:normal; }
+td.c.c-wrap { max-width:140px; white-space:normal; }   /* wraps but edits as one line */
+td.c:hover { background:var(--chip-bg); }
+td.c:empty::before, .who .c:empty::before { content:'—'; color:var(--muted); }
+.c.editing { overflow:visible; max-width:none; background:var(--surface); }
+.who .c, .emailcell .c { display:inline-block; max-width:150px; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; vertical-align:middle; cursor:text; }
+.who .c:hover, .emailcell .c:hover { background:var(--chip-bg); }
+.emailcell { white-space:nowrap; }
+.emailcell .c { max-width:130px; }
+.emailcell .c:empty::before { content:'—'; color:var(--muted); }
+.copybtn { border:none; background:transparent; cursor:pointer; color:var(--muted);
+  font-size:12px; padding:0 3px; vertical-align:middle; line-height:1; }
+.copybtn:hover { color:var(--accent); }
+/* editable niche / sub-niche / agency line under a channel name */
+.whofields { margin-top:4px; font-size:12px; color:var(--ink-2); display:flex;
+  flex-wrap:wrap; gap:1px 5px; align-items:center; }
+.whofields .sep { color:var(--muted); }
+.whofields .c { display:inline-block; min-width:26px; max-width:120px; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; cursor:text; border-radius:4px; }
+.whofields .c:hover { background:var(--chip-bg); }
+.whofields .c.cq:empty::before { content:attr(data-ph); color:var(--muted); font-style:italic; }
+.lnopen { color:var(--accent); text-decoration:none; font-size:12px; }
+.cellinput { width:200px; max-width:60vw; font:inherit; padding:5px 7px; border:1px solid var(--accent);
+  border-radius:6px; background:var(--surface); color:var(--ink); box-sizing:border-box; }
+textarea.cellinput { width:260px; resize:vertical; line-height:1.35; }
+tbody.addrow td { background:var(--chip-bg); border-bottom:2px solid var(--axis); }
+tbody.addrow input, tbody.addrow select { width:100%; font:inherit; padding:5px 7px;
+  border:1px solid var(--ring); border-radius:6px; background:var(--surface); color:var(--ink); }
+tbody.addrow.hidden { display:none; }        /* collapsed until "+ Add contact" */
+.addtoggle { margin:0 0 12px; }
+.ibadge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px;
+  font-weight:600; white-space:nowrap; background:var(--chip-bg); color:var(--ink-2); }
+.ibadge.replied, .ibadge.interested, .ibadge.meeting-booked, .ibadge.meeting-completed,
+.ibadge.closed { background:rgba(0,99,0,.14); color:var(--good); }
+.ibadge.bounced, .ibadge.unsubscribed, .ibadge.not-interested, .ibadge.lost,
+.ibadge.wrong-person { background:rgba(208,59,59,.14); color:var(--bad); }
+.ibadge.opened { background:var(--chip-bg); color:var(--accent); }
 {% block style %}{% endblock %}
 </style>
 </head>
@@ -74,9 +148,13 @@ td { padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top; 
   <nav>
     <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">Dashboard</a>
     <a href="{{ url_for('brands') }}" class="{{ 'active' if request.endpoint == 'brands' }}">Brands</a>
-    <a href="{{ url_for('channels') }}" class="{{ 'active' if request.endpoint == 'channels' }}">Channels</a>
+    <a href="{{ url_for('crm_influencers') }}" class="{{ 'active' if request.endpoint == 'crm_influencers' }}">Influencer CRM</a>
+    <a href="{{ url_for('crm_brands') }}" class="{{ 'active' if request.endpoint == 'crm_brands' }}">Brand CRM</a>
+    <a href="{{ url_for('campaigns_page') }}" class="{{ 'active' if request.endpoint == 'campaigns_page' }}">Campaigns</a>
+    <a href="{{ url_for('settings') }}" class="{{ 'active' if request.endpoint == 'settings' }}">Settings</a>
   </nav>
   <span class="spacer"></span>
+  <span id="throttleWarn">{% if scan.throttled_until %}⚠ YouTube cooldown active — resumes automatically{% endif %}</span>
   <span id="scanStatus">{% if scan.running %}<span class="dot"></span>{{ 'Backfilling' if scan.mode == 'backfill' else 'Scanning' }} {{ scan.current }} ({{ scan.done }}/{{ scan.total }})…{% endif %}</span>
   <form method="post" action="{{ url_for('scan') }}" style="display:flex; gap:8px; align-items:center">
     <select name="target" style="font:inherit; padding:6px 8px; border:1px solid var(--ring); border-radius:8px; background:var(--surface); color:var(--ink)">
@@ -87,7 +165,7 @@ td { padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top; 
     <button class="primary" {{ 'disabled' if scan.running }}>{{ 'Scanning…' if scan.running else 'Scan now' }}</button>
   </form>
 </header>
-<main>
+<main class="{% block main_class %}{% endblock %}">
   {% with msgs = get_flashed_messages(with_categories=true) %}
     {% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
   {% endwith %}
@@ -121,8 +199,12 @@ td { padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top; 
     if (!res.ok) { toast('Failed (' + res.status + ') — not saved'); return; }
     const act = f.dataset.ajax, row = f.closest('tr, .shot');
     if (act === 'remove-row' && row) {
+      const sheetTable = row.closest('table[data-sheet]');   // captured now, while row is still attached
       row.classList.add('fading');
-      setTimeout(() => row.remove(), 250);
+      setTimeout(() => {
+        if (sheetTable && sheetTable._sheetForget) sheetTable._sheetForget(row);
+        else row.remove();
+      }, 250);
     } else if (act === 'toggle-status' && row) {
       const inp = f.querySelector('input[name=status]');
       const btn = f.querySelector('button');
@@ -146,16 +228,36 @@ td { padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top; 
       const cells = row.querySelectorAll('td.num');
       if (cells[0]) cells[0].textContent = '0';
       if (cells[1]) cells[1].textContent = '0';
+    } else if (act === 'toggle-closed') {
+      const inp = f.querySelector('input[name=status]');
+      const btn = f.querySelector('button');
+      const closed = inp.value === 'closed';           // we just set it to this
+      btn.textContent = closed ? '✓ signed' : 'mark closed';
+      btn.classList.toggle('on', closed);
+      inp.value = closed ? 'prospect' : 'closed';       // next click reverses
     }
     toast(f.dataset.done || 'Saved');
   });
 })();
 (function poll() {
   const el = document.getElementById('scanStatus');
+  const warn = document.getElementById('throttleWarn');
   const wasRunning = {{ 'true' if scan.running else 'false' }};
+  function showThrottle(s) {
+    if (!warn) return false;
+    if (s.throttled_until && s.throttled_until * 1000 > Date.now()) {
+      const t = new Date(s.throttled_until * 1000);
+      warn.textContent = '⚠ YouTube cooldown active — resumes automatically around ' +
+        t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return true;
+    }
+    warn.textContent = '';
+    return false;
+  }
   async function tick(prev) {
     try {
       const s = await (await fetch('/scan/status')).json();
+      const throttled = showThrottle(s);
       if (s.running) {
         const verb = s.mode === 'backfill' ? 'Backfilling' : 'Scanning';
         el.innerHTML = '<span class="dot"></span>';
@@ -163,11 +265,338 @@ td { padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top; 
         setTimeout(() => tick(true), 2000);
       } else if (prev) {
         location.reload();   // scan just finished — show fresh data
+      } else if (throttled) {
+        setTimeout(() => tick(false), 30000);   // keep watching until the cooldown clears
       }
     } catch (e) { /* server gone; stop polling */ }
   }
   if (wasRunning) setTimeout(() => tick(true), 2000);
   else tick(false);
+})();
+// Spreadsheet behaviour for any table[data-sheet]: click a header to sort
+// (toggles asc/desc, empties last), a filter box under each header, and an
+// optional global search box referenced by the table's data-search id.
+document.querySelectorAll('table[data-sheet]').forEach(function (table) {
+  const thead = table.tHead, heads = Array.from(thead.rows[0].cells);
+  const body = table.querySelector('tbody.data');
+  if (!body) return;
+  // collapse the spreadsheet-style add row behind a button so it isn't
+  // a permanent strip of empty boxes above the data
+  const addBody = table.querySelector('tbody.addrow');
+  if (addBody) {
+    addBody.classList.add('hidden');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'addtoggle';
+    btn.textContent = '+ Add contact';
+    table.parentNode.insertBefore(btn, table);
+    btn.addEventListener('click', () => {
+      addBody.classList.toggle('hidden');
+      const open = !addBody.classList.contains('hidden');
+      btn.textContent = open ? 'Close add row' : '+ Add contact';
+      if (open) { const f = addBody.querySelector('input, select'); if (f) f.focus(); }
+    });
+  }
+  const cellVal = (row, i) => {
+    const c = row.cells[i]; if (!c) return '';
+    if (c.dataset.val != null) return c.dataset.val.trim();   // explicit sort/filter key
+    const cc = c.querySelector('.c');                         // the cell's editable value
+    if (cc) {                                                 // (ignore other inputs in the cell, e.g. hidden form fields)
+      const ed = cc.querySelector('input, select, textarea'); // that value being edited
+      return ((ed ? ed.value : cc.textContent) || '').trim();
+    }
+    const ed = c.querySelector('input, select, textarea');   // whole-cell input / being edited
+    return ((ed ? ed.value : c.textContent) || '').trim();
+  };
+
+  // Virtualize: pull every row out of the live DOM once, up front, and keep
+  // it as a plain in-memory array. Rendering all of a large CRM table (500+
+  // rows, each with several inline-editable cells) at once meant every
+  // keystroke anywhere on the page paid for a style/layout recalc across the
+  // whole table (Chrome's "Forced reflow" insight — hundreds of ms of input
+  // delay even in an unrelated field). cellVal/querySelector work the same
+  // on a detached node, so filtering and sorting run over this array with no
+  // layout cost, over the *full* dataset — only the current page's ~50 rows
+  // ever get attached to the DOM at a time.
+  const allRows = Array.from(body.rows);
+  const emptyRow = allRows.find(r => !r.dataset.id) || null;   // Jinja's "no rows yet" placeholder, if present
+  const master = allRows.filter(r => r.dataset.id);
+  body.textContent = '';
+
+  const filters = [];   // each: {i, active():bool, match(cellValue):bool}
+  let globalTerm = '';
+  const fRow = thead.insertRow();
+  fRow.className = 'filterrow';
+  // distinct values for every 'select' column, gathered in one pass
+  const selCols = heads.reduce((a, th, i) => (th.dataset.filter === 'select' ? a.concat(i) : a), []);
+  const distinct = {}; selCols.forEach(i => distinct[i] = new Set());
+  if (selCols.length) master.forEach(r => selCols.forEach(i => {
+    const v = cellVal(r, i); if (v) distinct[i].add(v);
+  }));
+
+  heads.forEach(function (th, i) {
+    const cell = fRow.insertCell();
+    const kind = th.dataset.filter;
+    if (!kind || kind === 'none') return;
+
+    if (kind === 'select') {                       // multi-select checkbox dropdown
+      const chosen = new Set();
+      const wrap = document.createElement('div'); wrap.className = 'mfilter';
+      const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'mfbtn';
+      const label = th.firstChild ? th.firstChild.textContent.trim() : 'value';
+      const relabel = () => {
+        btn.textContent = chosen.size ? label + ' (' + chosen.size + ') ▾' : 'All ▾';
+        btn.classList.toggle('on', chosen.size > 0);
+      };
+      relabel();
+      const panel = document.createElement('div'); panel.className = 'mfpanel';
+      const clr = document.createElement('div'); clr.className = 'mfclear'; clr.textContent = 'Clear';
+      clr.addEventListener('click', () => {
+        chosen.clear(); panel.querySelectorAll('input').forEach(c => c.checked = false); relabel(); applyFilter();
+      });
+      panel.appendChild(clr);
+      Array.from(distinct[i]).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())).forEach(v => {
+        const lab = document.createElement('label');
+        const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = v;
+        cb.addEventListener('change', () => { cb.checked ? chosen.add(v) : chosen.delete(v); relabel(); applyFilter(); });
+        lab.appendChild(cb); lab.appendChild(document.createTextNode(v));
+        panel.appendChild(lab);
+      });
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        document.querySelectorAll('.mfilter.open').forEach(m => { if (m !== wrap) m.classList.remove('open'); });
+        wrap.classList.toggle('open');
+      });
+      panel.addEventListener('click', e => e.stopPropagation());
+      wrap.appendChild(btn); wrap.appendChild(panel); cell.appendChild(wrap);
+      filters.push({ i, active: () => chosen.size > 0, match: v => chosen.has(v) });
+
+    } else if (kind === 'date') {                  // show rows dated on or before this date
+      const inp = document.createElement('input'); inp.type = 'date'; inp.className = 'dfilter1';
+      inp.title = 'show rows dated on or before this date';
+      inp.addEventListener('input', applyFilter);
+      cell.appendChild(inp);
+      filters.push({
+        i,
+        active: () => !!inp.value,
+        match: v => {
+          if (!inp.value) return true;
+          if (!v) return true;                     // never-contacted: always show (most overdue)
+          return v.slice(0, 10) <= inp.value;
+        },
+      });
+
+    } else {                                       // free-text "contains"
+      const inp = document.createElement('input'); inp.className = 'colfilter'; inp.placeholder = 'filter';
+      inp.addEventListener('input', applyFilter);
+      cell.appendChild(inp);
+      filters.push({ i, active: () => inp.value.trim() !== '',
+                     match: v => v.toLowerCase().includes(inp.value.trim().toLowerCase()) });
+    }
+  });
+
+  const PER = 50;
+  let filtered = master.slice();
+  let page = 1;
+  let sortCol = -1, dir = 1;
+  const isDate = s => /^\d{4}-\d{2}-\d{2}/.test(s);
+  const isNum = s => /^[\d., ]+$/.test(s) && !isNaN(parseFloat(s.replace(/[, ]/g, '')));
+
+  const pager = document.createElement('div');
+  pager.className = 'pager';
+  table.insertAdjacentElement('afterend', pager);
+
+  function render() {
+    if (sortCol !== -1) {
+      filtered.sort(function (a, b) {
+        const x = cellVal(a, sortCol), y = cellVal(b, sortCol);
+        if (!x && !y) return 0; if (!x) return 1; if (!y) return -1;
+        let c;
+        if (isDate(x) && isDate(y)) c = x.localeCompare(y);
+        else if (isNum(x) && isNum(y)) c = parseFloat(x.replace(/[, ]/g, '')) - parseFloat(y.replace(/[, ]/g, ''));
+        else c = x.toLowerCase().localeCompare(y.toLowerCase());
+        return c * dir;
+      });
+    }
+    const total = filtered.length;
+    const pages = Math.max(1, Math.ceil(total / PER));
+    if (page > pages) page = pages;
+    if (page < 1) page = 1;
+    const start = (page - 1) * PER;
+    const slice = filtered.slice(start, start + PER);
+
+    body.textContent = '';
+    if (slice.length) {
+      slice.forEach(r => body.appendChild(r));
+    } else if (emptyRow && !master.length) {
+      body.appendChild(emptyRow);
+    } else {
+      const tr = document.createElement('tr'), td = document.createElement('td');
+      td.colSpan = heads.length; td.style.color = 'var(--muted)';
+      td.textContent = 'No rows match your filters.';
+      tr.appendChild(td); body.appendChild(tr);
+    }
+
+    pager.textContent = '';
+    if (total) {
+      const info = document.createElement('span');
+      info.textContent = 'Showing ' + (start + 1) + '–' + Math.min(total, start + PER) + ' of ' + total +
+        (total !== master.length ? ' (filtered from ' + master.length + ')' : '');
+      pager.appendChild(info);
+    }
+    if (pages > 1) {
+      const prev = document.createElement(page > 1 ? 'a' : 'span');
+      prev.textContent = '‹ Prev';
+      if (page > 1) prev.addEventListener('click', () => { page--; render(); });
+      else prev.className = 'dis';
+      const mid = document.createElement('span'); mid.textContent = 'Page ' + page + ' of ' + pages;
+      const next = document.createElement(page < pages ? 'a' : 'span');
+      next.textContent = 'Next ›';
+      if (page < pages) next.addEventListener('click', () => { page++; render(); });
+      else next.className = 'dis';
+      pager.appendChild(prev); pager.appendChild(mid); pager.appendChild(next);
+    }
+  }
+
+  function applyFilter() {
+    const active = filters.filter(f => f.active());
+    filtered = master.filter(function (r) {
+      let show = active.every(f => f.match(cellVal(r, f.i)));
+      // reuse cellVal (not a raw per-cell input scan) so a cell's *own* value is
+      // matched even when it also contains unrelated inputs, e.g. the "who"
+      // cell's hidden status/re-scan/delete forms sitting next to the name
+      if (show && globalTerm) {
+        show = heads.some((_, ci) => cellVal(r, ci).toLowerCase().includes(globalTerm));
+      }
+      return show;
+    });
+    page = 1;
+    render();
+  }
+
+  // let the delete handler (data-ajax="remove-row") drop a row out of the
+  // in-memory dataset too, so it doesn't reappear on the next filter/sort/page
+  table._sheetForget = function (tr) {
+    let idx = master.indexOf(tr); if (idx !== -1) master.splice(idx, 1);
+    idx = filtered.indexOf(tr); if (idx !== -1) filtered.splice(idx, 1);
+    render();
+  };
+
+  document.addEventListener('click', () =>
+    document.querySelectorAll('.mfilter.open').forEach(m => m.classList.remove('open')));
+
+  const gs = table.dataset.search && document.getElementById(table.dataset.search);
+  if (gs) gs.addEventListener('input', () => { globalTerm = gs.value.trim().toLowerCase(); applyFilter(); });
+
+  // sorting — click a header to cycle asc → desc; a faint ↕ marks sortable columns
+  heads.forEach(function (th, i) {
+    if (th.dataset.sort === 'none') return;
+    th.classList.add('sortable');
+    const ind = document.createElement('span'); ind.className = 'sortind'; ind.textContent = '↕'; th.appendChild(ind);
+    th.addEventListener('click', function () {
+      dir = (sortCol === i) ? -dir : 1; sortCol = i;
+      heads.forEach(h => { const s = h.querySelector('.sortind'); if (s) { s.textContent = '↕'; s.classList.remove('act'); } });
+      ind.textContent = dir > 0 ? '▲' : '▼'; ind.classList.add('act');
+      page = 1;
+      render();
+    });
+  });
+
+  render();
+
+  // one-click copy button next to a value (e.g. email)
+  body.addEventListener('click', function (e) {
+    const btn = e.target.closest('.copybtn');
+    if (!btn) return;
+    e.stopPropagation();
+    const src = btn.closest('td').querySelector('.c');
+    const text = ((src ? src.textContent : '') || '').trim();
+    if (!text || !navigator.clipboard) return;
+    navigator.clipboard.writeText(text);
+    const old = btn.textContent; btn.textContent = '✓';
+    setTimeout(() => { btn.textContent = old; }, 900);
+  });
+
+  // Click-to-edit: data cells render as light text and only become an input
+  // while you're editing one — keeps the DOM ~10x smaller than a field per cell.
+  const OPTS = window.__sheetOpts || {};
+  const editTpl = table.dataset.editurl || '';
+  const editUrl = id => editTpl.replace(/0\/edit$/, id + '/edit');
+  body.addEventListener('click', function (e) {
+    const cell = e.target.closest('.c');
+    if (!cell || !body.contains(cell) || cell.querySelector('input, select, textarea')) return;
+    const tr = cell.closest('tr'); const id = tr && tr.dataset.id;
+    if (!id) return;
+    const field = cell.dataset.f, original = cell.textContent.trim();
+    let ctrl;
+    if (cell.dataset.sel) {
+      ctrl = document.createElement('select');
+      const blank = document.createElement('option'); blank.value = ''; blank.textContent = '—';
+      ctrl.appendChild(blank);
+      (OPTS[cell.dataset.sel] || []).forEach(o => {
+        const op = document.createElement('option'); op.textContent = o;
+        if (o === original) op.selected = true; ctrl.appendChild(op);
+      });
+    } else if (cell.classList.contains('c-multi')) {
+      ctrl = document.createElement('textarea'); ctrl.value = original; ctrl.rows = 2;
+    } else {
+      ctrl = document.createElement('input');
+      ctrl.type = cell.dataset.type === 'date' ? 'date' : 'text'; ctrl.value = original;
+    }
+    ctrl.className = 'cellinput';
+    cell.classList.add('editing'); cell.textContent = ''; cell.appendChild(ctrl);
+    ctrl.focus(); if (ctrl.select) { try { ctrl.select(); } catch (_) {} }
+    let done = false;
+    function finish(save) {
+      if (done) return; done = true;
+      const val = ctrl.value.trim();
+      cell.classList.remove('editing');
+      cell.textContent = save ? val : original;
+      if (save && val !== original) {
+        const fd = new FormData(); fd.append(field, val);
+        fetch(editUrl(id), { method: 'POST', body: fd, headers: { 'X-Requested-With': 'fetch' } })
+          .then(r => { if (!r.ok) throw 0; })
+          .catch(() => { cell.textContent = original; });
+      }
+    }
+    ctrl.addEventListener('blur', () => finish(true));
+    ctrl.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter' && ctrl.tagName !== 'TEXTAREA') { ev.preventDefault(); ctrl.blur(); }
+      else if (ev.key === 'Escape') { finish(false); }
+    });
+    if (cell.dataset.sel) ctrl.addEventListener('change', () => ctrl.blur());
+  });
+});
+
+// AJAX pagination: a pager link (or the rows-per-page control) inside a
+// [data-page] block swaps just that block's contents instead of reloading the
+// whole page. The block in the fetched response is matched by its data-page key.
+(function () {
+  async function swap(root, href) {
+    root.style.opacity = '0.5';
+    try {
+      const html = await (await fetch(href, { headers: { 'X-Requested-With': 'fetch' } })).text();
+      const fresh = new DOMParser().parseFromString(html, 'text/html')
+        .querySelector('[data-page="' + root.dataset.page + '"]');
+      if (fresh) { root.innerHTML = fresh.innerHTML; history.pushState({}, '', href); }
+    } catch (_) { location.href = href; } finally { root.style.opacity = ''; }
+  }
+  document.addEventListener('click', function (e) {
+    const a = e.target.closest('[data-page] .pager a');
+    if (!a || !a.getAttribute('href')) return;
+    e.preventDefault();
+    swap(a.closest('[data-page]'), a.getAttribute('href'));
+  });
+  document.addEventListener('submit', function (e) {
+    const form = e.target;
+    if ((form.getAttribute('method') || '').toLowerCase() !== 'get') return;
+    const key = form.dataset.pageTarget;
+    const root = key ? document.querySelector('[data-page="' + key + '"]') : form.closest('[data-page]');
+    if (!root) return;
+    e.preventDefault();
+    swap(root, location.pathname + '?' + new URLSearchParams(new FormData(form)).toString());
+  });
+  window.addEventListener('popstate', function () { location.reload(); });
 })();
 </script>
 </body>

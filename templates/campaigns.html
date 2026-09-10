@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Campaigns — uSponsor{% endblock %}
+{% block style %}
+.pills { display:flex; gap:18px; flex-wrap:wrap; color:var(--ink-2); font-size:13px; }
+.pills b { color:var(--ink); font-size:15px; }
+.days { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; }
+.day { background:var(--surface); border:1px solid var(--ring); border-radius:12px; padding:14px 15px; }
+.day.today { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+.day.weekend { opacity:.82; }
+.dlabel { font-size:12.5px; color:var(--muted); font-weight:600; }
+.day.today .dlabel { color:var(--accent); }
+.dcount { font-size:38px; font-weight:700; line-height:1.05; margin-top:4px; font-variant-numeric:tabular-nums; }
+.dunit { font-size:12px; color:var(--muted); margin-bottom:10px; }
+.dbreak { border-top:1px solid var(--grid); padding-top:8px; display:flex; flex-direction:column; gap:4px; }
+.brow { display:flex; gap:8px; font-size:12px; justify-content:space-between; }
+.brow span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink-2); }
+.brow .num { font-variant-numeric:tabular-nums; color:var(--ink); font-weight:600; }
+.est { color:var(--muted); font-weight:400; }
+.dnone { font-size:12.5px; color:var(--muted); border-top:1px solid var(--grid); padding-top:8px; }
+.sched-accounts { display:flex; flex-direction:column; gap:10px; }
+.sched-acct { border:1px solid var(--ring); border-radius:12px; padding:2px 15px 10px; background:var(--surface); }
+.sched-acct summary { cursor:pointer; padding:10px 0; list-style:none; display:flex; align-items:center; gap:10px; }
+.sched-acct summary::-webkit-details-marker { display:none; }
+.sched-acct summary::before { content:'▸'; color:var(--muted); font-size:12px; }
+.sched-acct[open] summary::before { content:'▾'; }
+.sched-acct .count { color:var(--muted); font-size:12.5px; font-weight:400; }
+.sched-acct table td.nm { max-width:460px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2>Campaigns — sending forecast</h2>
+  <p class="sub">Projected <b>emails per day</b> across your active Instantly campaigns for today and the next five days, in each campaign's own sending timezone. Counts only <b>live</b> leads (bounced/unsubscribed/replied/completed excluded), on the day their next step is due; if a day's send window has already closed and it hasn't gone out, it rolls to the next scheduled day. Then <b>capped at your mailbox/campaign daily limits</b>, overflow staggering forward — like Instantly does.</p>
+  {% if configured and data %}
+  <div class="pills">
+    <span><b>{{ data.active_campaigns }}</b> active campaigns</span>
+    {% if data.days %}<span><b>{{ data.days[0].total }}</b> today</span>{% endif %}
+    <span class="spacer" style="flex:1"></span>
+    <span style="color:var(--muted)">as of {{ data.generated_at }}</span>
+    <a class="btn" href="{{ url_for('campaigns_page') }}" style="padding:6px 14px; font-weight:600">↻ Refresh</a>
+  </div>
+  {% endif %}
+</div>
+
+{% if not configured %}
+  <div class="card"><p class="sub" style="margin:0">Not connected to Instantly. Add your API key in <code>instantly.json</code> (see SETUP_INSTANTLY.md), then reload.</p></div>
+{% elif error %}
+  <div class="card flash err">Couldn't reach Instantly: {{ error }}</div>
+{% else %}
+<div class="days">
+  {% for day in data.days %}
+  <div class="day {{ 'today' if day.today }} {{ 'weekend' if day.weekend }}">
+    <div class="dlabel">{{ 'TODAY · ' if day.today }}{{ day.label }}</div>
+    <div class="dcount">{{ day.total }}</div>
+    <div class="dunit">{{ 'sent so far today' if day.today else 'emails projected' }}{% if day.capped %} · <span title="More leads were due than actually sent / than your daily limit allows; the rest roll to later days." style="color:var(--accent)">rolled over</span>{% endif %}</div>
+    {% if day.campaigns %}
+    <div class="dbreak">
+      {% for c in day.campaigns %}
+      <div class="brow"><span title="{{ c.name }}">{{ c.name }}</span><span class="num">{{ c.count }}</span></div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="dnone">Nothing scheduled{{ ' (weekend)' if day.weekend }}.</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+<div class="card" style="margin-top:20px">
+  <p class="sub" style="margin:0">Send days are computed in each campaign's schedule timezone (Instantly stamps sends in UTC, so a late-evening send lands on the next UTC day — reading that raw would mis-place it by a day). A step is placed on the day it's due (last-contacted + the step's delay, in that timezone, moved to the next scheduled day); if today's send window has already closed and it hasn't gone out, it rolls forward. Days are capped at your mailbox/campaign daily limits with overflow cascading forward. Recomputed live on each load/refresh.</p>
+</div>
+{% endif %}
+
+{% include "_instantly_schedule_card.html" %}
+{% endblock %}

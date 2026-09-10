@@ -1,0 +1,89 @@
+<div class="card">
+  <h2>Today's active campaigns — by account</h2>
+  <p class="sub">Active campaigns scheduled to send <b>today</b>, grouped by sending account, with send windows in Eastern time. Recomputed live on load and on refresh — nothing here is cached, so an inactive or finished-for-the-day campaign just drops off.</p>
+  {% if not configured %}
+  <p class="sub" style="margin:0">Not connected to Instantly.</p>
+  {% elif schedule_error %}
+  <div class="flash err">Couldn't reach Instantly: {{ schedule_error }}</div>
+  {% else %}
+  <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px">
+    <button type="button" id="scheduleRefreshBtn" class="btn">↻ Refresh</button>
+    <span id="scheduleAsOf" class="sub" style="margin:0"></span>
+  </div>
+  <div id="scheduleAccounts" class="sched-accounts">
+    {% for email, campaigns in schedule.items() %}
+    <details class="sched-acct" open>
+      <summary><b>{{ email }}</b> <span class="count">{{ campaigns|length }} active today</span></summary>
+      <table>
+        <tr><th>Campaign</th><th>Window (ET)</th></tr>
+        {% for c in campaigns %}
+        <tr>
+          <td class="nm" title="{{ c.name }}">{{ c.name }}</td>
+          <td class="num">{{ c.from }} – {{ c.to }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </details>
+    {% else %}
+    <p class="sub" style="margin:0">No campaigns are scheduled to send today.</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% if configured %}
+<script>
+(function () {
+  const wrap = document.getElementById('scheduleAccounts');
+  const btn = document.getElementById('scheduleRefreshBtn');
+  const asOf = document.getElementById('scheduleAsOf');
+  if (!wrap || !btn) return;
+
+  function stamp() {
+    asOf.textContent = 'as of ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  }
+  stamp();
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function render(schedule) {
+    const emails = Object.keys(schedule).sort();
+    if (!emails.length) {
+      wrap.innerHTML = '<p class="sub" style="margin:0">No campaigns are scheduled to send today.</p>';
+      return;
+    }
+    wrap.innerHTML = emails.map(function (email) {
+      const campaigns = schedule[email];
+      const rows = campaigns.map(function (c) {
+        return '<tr>' +
+          '<td class="nm" title="' + esc(c.name) + '">' + esc(c.name) + '</td>' +
+          '<td class="num">' + esc(c.from) + ' – ' + esc(c.to) + '</td>' +
+          '</tr>';
+      }).join('');
+      return '<details class="sched-acct" open>' +
+        '<summary><b>' + esc(email) + '</b> <span class="count">' + campaigns.length + ' active today</span></summary>' +
+        '<table><tr><th>Campaign</th><th>Window (ET)</th></tr>' + rows + '</table></details>';
+    }).join('');
+  }
+
+  btn.addEventListener('click', async function () {
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Refreshing…';
+    try {
+      const res = await fetch('{{ url_for("campaigns_schedule_json") }}');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+      render(data.schedule || {});
+      stamp();
+    } catch (e) {
+      wrap.insertAdjacentHTML('afterbegin', '<div class="flash err">Refresh failed: ' + esc(e.message) + '</div>');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  });
+})();
+</script>
+{% endif %}

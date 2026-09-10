@@ -16,6 +16,9 @@
 .chart .m { font-size:10.5px; color:var(--muted); white-space:nowrap; }
 .two { display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start; }
 @media (max-width:900px) { .two { grid-template-columns:1fr; } }
+.stat-group h3 { font-size:13px; color:var(--muted); font-weight:700; text-transform:uppercase;
+  letter-spacing:.03em; margin:18px 0 8px; }
+.stat-group:first-child h3 { margin-top:0; }
 .kit label { display:block; font-size:12px; color:var(--muted); font-weight:600; margin:10px 0 3px; }
 .kit input, .kit textarea { font:inherit; width:100%; padding:7px 10px; border:1px solid var(--ring);
   border-radius:8px; background:var(--page); color:var(--ink); }
@@ -29,6 +32,12 @@ pre.copybox { background:var(--page); border:1px solid var(--ring); border-radiu
 .gallery .del button { width:24px; height:24px; padding:0; font-size:12px; line-height:1;
   border-radius:6px; background:var(--surface); opacity:.85; }
 .ev { color:var(--muted); font-size:12px; }
+.pager { display:flex; gap:14px; align-items:center; margin-top:12px; font-size:13px; }
+.pager .dis { color:var(--muted); }
+.sponsedit input { font:inherit; width:100%; min-width:150px; border:1px solid transparent;
+  border-radius:6px; padding:5px 7px; background:transparent; color:var(--ink); }
+.sponsedit input:hover { border-color:var(--grid); }
+.sponsedit input:focus { border-color:var(--accent); background:var(--surface); outline:none; }
 {% endblock %}
 
 {% block content %}
@@ -40,16 +49,32 @@ pre.copybox { background:var(--page); border:1px solid var(--ring); border-radiu
   <a href="{{ ch.input_url }}" target="_blank">YouTube ↗</a>
   <a href="{{ url_for('dashboard', creator=ch.id, days='all') }}">open in dashboard →</a>
   <span style="flex:1"></span>
-  <a href="{{ url_for('channels') }}">‹ back to Channels</a>
+  <a href="{{ url_for('crm_influencers') }}">‹ back to Influencer CRM</a>
 </div>
 
 <div class="tiles">
   <div class="tile"><div class="v num">{{ '{:,}'.format(ch.subscribers) if ch.subscribers else '—' }}</div><div class="l">subscribers</div></div>
-  <div class="tile"><div class="v num">{{ '{:,}'.format(stats.avg_views | int) if stats.avg_views else '—' }}</div><div class="l" title="Last 12 videos, highest and lowest dropped">adjusted avg views ({{ stats.n }} videos)</div></div>
-  <div class="tile"><div class="v num">{{ '%.1f%%' | format(stats.engagement) if stats.engagement else '—' }}</div><div class="l">engagement rate</div></div>
   <div class="tile"><div class="v num">{{ '%.1f' | format(cadence) if cadence else '—' }}</div><div class="l">uploads / month (90d)</div></div>
   <div class="tile"><div class="v num">{{ brands | length }}</div><div class="l">brands worked with</div></div>
 </div>
+
+<div class="stat-group">
+  <h3>Long-form</h3>
+  <div class="tiles">
+    <div class="tile"><div class="v num">{{ '{:,}'.format(stats.avg_views | int) if stats.avg_views else '—' }}</div><div class="l" title="Last 12 long-form videos, highest and lowest dropped">adjusted avg views ({{ stats.n }} videos)</div></div>
+    <div class="tile"><div class="v num">{{ '%.1f%%' | format(stats.engagement) if stats.engagement else '—' }}</div><div class="l">engagement rate</div></div>
+  </div>
+</div>
+
+{% if has_shorts %}
+<div class="stat-group">
+  <h3>Shorts</h3>
+  <div class="tiles">
+    <div class="tile"><div class="v num">{{ '{:,}'.format(stats_shorts.avg_views | int) if stats_shorts.avg_views else '—' }}</div><div class="l" title="Last 12 Shorts, highest and lowest dropped">adjusted avg views ({{ stats_shorts.n }} shorts)</div></div>
+    <div class="tile"><div class="v num">{{ '%.1f%%' | format(stats_shorts.engagement) if stats_shorts.engagement else '—' }}</div><div class="l">engagement rate</div></div>
+  </div>
+</div>
+{% endif %}
 
 <div class="two">
   <div>
@@ -149,7 +174,8 @@ pre.copybox { background:var(--page); border:1px solid var(--ring); border-radiu
 
 <div class="card">
   <h2>Recent videos</h2>
-  <p class="sub">Latest 25 scanned, with views and detected sponsors.</p>
+  <p class="sub">Scanned long-form videos, newest first — {{ '{:,}'.format(vtotal) }} total, 25 per page. Click a <b>Sponsors</b> cell to edit it (comma-separated); it saves on Enter or when you click away.</p>
+  <div data-page="videos">
   <div class="scroll">
     <table>
       <tr><th>Date</th><th>Video</th><th>Views</th><th>Sponsors</th></tr>
@@ -158,10 +184,62 @@ pre.copybox { background:var(--page); border:1px solid var(--ring); border-radiu
         <td class="num" style="white-space:nowrap">{{ v.upload_date or '—' }}</td>
         <td><a href="{{ v.url }}" target="_blank">{{ v.title }}</a></td>
         <td class="num">{{ '{:,}'.format(v.view_count) if v.view_count else '—' }}</td>
-        <td>{{ v.sponsors or '' }}</td>
+        <td>
+          <form class="sponsedit" method="post" action="{{ url_for('creator_video_sponsors', cid=ch.id, vid=v.id) }}" data-ajax="save" data-done="Sponsors updated">
+            <input name="sponsors" value="{{ v.sponsors or '' }}" placeholder="— add sponsor —" autocomplete="off">
+          </form>
+        </td>
       </tr>
       {% endfor %}
     </table>
   </div>
+  {% if vpages > 1 %}
+  <div class="pager">
+    {% if vpage > 1 %}<a href="{{ url_for('creator_detail', cid=ch.id, vpage=vpage - 1, spage=spage) }}">‹ Prev</a>{% else %}<span class="dis">‹ Prev</span>{% endif %}
+    <span>Page {{ vpage }} of {{ vpages }}</span>
+    {% if vpage < vpages %}<a href="{{ url_for('creator_detail', cid=ch.id, vpage=vpage + 1, spage=spage) }}">Next ›</a>{% else %}<span class="dis">Next ›</span>{% endif %}
+  </div>
+  {% endif %}
+  </div>
 </div>
+
+{% if has_shorts %}
+<div class="card">
+  <h2>Recent Shorts</h2>
+  <p class="sub">Scanned Shorts, newest first — {{ '{:,}'.format(stotal) }} total, 25 per page. Tracked separately from long-form so Shorts volume doesn't skew the average-views/engagement numbers above.</p>
+  <div data-page="shorts">
+  <div class="scroll">
+    <table>
+      <tr><th>Date</th><th>Video</th><th>Views</th><th>Sponsors</th></tr>
+      {% for v in videos_shorts %}
+      <tr>
+        <td class="num" style="white-space:nowrap">{{ v.upload_date or '—' }}</td>
+        <td><a href="{{ v.url }}" target="_blank">{{ v.title }}</a></td>
+        <td class="num">{{ '{:,}'.format(v.view_count) if v.view_count else '—' }}</td>
+        <td>
+          <form class="sponsedit" method="post" action="{{ url_for('creator_video_sponsors', cid=ch.id, vid=v.id) }}" data-ajax="save" data-done="Sponsors updated">
+            <input name="sponsors" value="{{ v.sponsors or '' }}" placeholder="— add sponsor —" autocomplete="off">
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% if spages > 1 %}
+  <div class="pager">
+    {% if spage > 1 %}<a href="{{ url_for('creator_detail', cid=ch.id, vpage=vpage, spage=spage - 1) }}">‹ Prev</a>{% else %}<span class="dis">‹ Prev</span>{% endif %}
+    <span>Page {{ spage }} of {{ spages }}</span>
+    {% if spage < spages %}<a href="{{ url_for('creator_detail', cid=ch.id, vpage=vpage, spage=spage + 1) }}">Next ›</a>{% else %}<span class="dis">Next ›</span>{% endif %}
+  </div>
+  {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<script>
+// save a video's sponsors on change (delegated so it survives page swaps)
+document.addEventListener('change', function (e) {
+  if (e.target.matches && e.target.matches('.sponsedit input')) e.target.form.requestSubmit();
+});
+</script>
 {% endblock %}

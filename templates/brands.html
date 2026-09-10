@@ -24,6 +24,14 @@ a.see:hover { opacity:1; background:var(--chip-bg); text-decoration:none; }
 .pager { display:flex; gap:14px; align-items:center; margin-top:10px; font-size:13px; color:var(--ink-2); }
 .pager a { font-weight:600; }
 .pager .dis { color:var(--muted); }
+.whead { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; justify-content:space-between; }
+.whead h2 { margin:0; }
+.wsearch-form { display:flex; align-items:center; gap:5px; }
+.wsearch { font:inherit; font-size:12.5px; padding:5px 9px; border:1px solid var(--ring);
+  border-radius:8px; background:var(--page); color:var(--ink); width:170px; }
+.wsearch:focus { border-color:var(--accent); outline:none; }
+.wsearch-clear { font-size:12px; opacity:.55; padding:2px 4px; }
+.wsearch-clear:hover { opacity:1; }
 {% endblock %}
 
 {% macro pager(arg, page, pages) %}
@@ -36,6 +44,15 @@ a.see:hover { opacity:1; background:var(--chip-bg); text-decoration:none; }
     {% else %}<span class="dis">Next ›</span>{% endif %}
   </div>
   {% endif %}
+{% endmacro %}
+
+{% macro search_box(qarg, page_arg, placeholder) %}
+  {% set value = request.args.get(qarg, '') %}
+  <form method="get" action="{{ url_for('brands') }}" class="wsearch-form">
+    {% for k, v in request.args.items() %}{% if k != qarg and k != page_arg %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}{% endfor %}
+    <input type="search" name="{{ qarg }}" value="{{ value }}" placeholder="{{ placeholder }}" class="wsearch">
+    {% if value %}<a href="{{ clear_url(qarg, page_arg) }}" class="wsearch-clear" title="Clear search">✕</a>{% endif %}
+  </form>
 {% endmacro %}
 
 {% macro rename_form(key, name) %}
@@ -143,8 +160,12 @@ a.see:hover { opacity:1; background:var(--chip-bg); text-decoration:none; }
 
 {% if rec %}
 <div class="card" style="border-left:3px solid var(--accent)">
-  <h2>Recent suggestions — sponsored this week, not in your CRM</h2>
+  <div class="whead">
+    <h2>Recent suggestions — sponsored this week, not in your CRM</h2>
+    {{ search_box('q_rec', 'p_rec', 'Search brand…') }}
+  </div>
   <p class="sub">Fresh leads: brands that appeared in the last 7 days of uploads and aren't in your known list.</p>
+  <div data-page="recent">
   <div class="scroll">
     <table>
       <tr><th>Brand</th><th>Sponsorships (7 days)</th><th>Creators</th><th>Last seen</th><th></th></tr>
@@ -160,15 +181,20 @@ a.see:hover { opacity:1; background:var(--chip-bg); text-decoration:none; }
     </table>
   </div>
   {{ pager('p_rec', rec_p, rec_pp) }}
+  </div>
 </div>
 {% endif %}
 
 {% set mon, mon_p, mon_pp = monthly %}
 {% if mon %}
 <div class="card">
-  <h2>Most active brands — last 30 days</h2>
+  <div class="whead">
+    <h2>Most active brands — last 30 days</h2>
+    {{ search_box('q_mon', 'p_mon', 'Search brand…') }}
+  </div>
   <p class="sub">Who's spending in your niches right now, busiest first. ✓ = in your CRM, 🚫 = boycotted;
      unmarked rows are new brands you could pitch.</p>
+  <div data-page="monthly">
   <div class="scroll">
     <table>
       <tr><th>Brand</th><th>Sponsorships (30 days)</th><th>Creators</th><th>Last seen</th><th></th></tr>
@@ -188,14 +214,19 @@ a.see:hover { opacity:1; background:var(--chip-bg); text-decoration:none; }
     </table>
   </div>
   {{ pager('p_mon', mon_p, mon_pp) }}
+  </div>
 </div>
 {% endif %}
 
 <div class="two">
   <div class="card">
-    <h2>Suggestions — not in your CRM</h2>
+    <div class="whead">
+      <h2>Suggestions — not in your CRM</h2>
+      {{ search_box('q_sug', 'p_sug', 'Search brand…') }}
+    </div>
     <p class="sub">Brands detected sponsoring your tracked creators that you haven't imported or
        marked yet. Mark one as known and it stops being suggested.</p>
+    <div data-page="sug">
     {% if sug %}
     <div class="scroll">
       <table>
@@ -215,11 +246,16 @@ a.see:hover { opacity:1; background:var(--chip-bg); text-decoration:none; }
     {% else %}
       <p class="sub">Nothing to suggest — every detected brand is already in your known list. 🎉</p>
     {% endif %}
+    </div>
   </div>
 
   <div class="card">
-    <h2>Known brands</h2>
+    <div class="whead">
+      <h2>Known brands</h2>
+      {{ search_box('q_known', 'p_known', 'Search brand…') }}
+    </div>
     <p class="sub">From your CRM imports and manual marks.</p>
+    <div data-page="known">
     {% if kn %}
     <div class="scroll">
       <table>
@@ -248,10 +284,15 @@ a.see:hover { opacity:1; background:var(--chip-bg); text-decoration:none; }
     {% else %}
       <p class="sub">No known brands yet — import your CRM list above.</p>
     {% endif %}
+    </div>
 
-    <h2 style="margin-top:22px">Boycott 🚫</h2>
+    <div class="whead" style="margin-top:22px">
+      <h2>Boycott 🚫</h2>
+      {{ search_box('q_boy', 'p_boy', 'Search brand…') }}
+    </div>
     <p class="sub">Brands you won't work with. Still visible on the dashboard (their activity is
        useful intel) but flagged 🚫 and never suggested.</p>
+    <div data-page="boycott">
     {% if boy %}
     <div class="scroll">
       <table>
@@ -273,9 +314,14 @@ a.see:hover { opacity:1; background:var(--chip-bg); text-decoration:none; }
     {% else %}
       <p class="sub">Nothing boycotted. Use the “Boycott” button on a suggestion or known brand.</p>
     {% endif %}
+    </div>
 
-    <h2 style="margin-top:22px">Erroneous</h2>
+    <div class="whead" style="margin-top:22px">
+      <h2>Erroneous</h2>
+      {{ search_box('q_err', 'p_err', 'Search text…') }}
+    </div>
     <p class="sub">False detections you've flagged — hidden from the dashboard and suggestions.</p>
+    <div data-page="erroneous">
     {% if err %}
     <div class="scroll">
       <table>
@@ -297,8 +343,12 @@ a.see:hover { opacity:1; background:var(--chip-bg); text-decoration:none; }
     {% else %}
       <p class="sub">Nothing flagged yet. Use the “Erroneous” button on a suggestion.</p>
     {% endif %}
+    </div>
 
-    <h2 style="margin-top:22px">Aliases</h2>
+    <div class="whead" style="margin-top:22px">
+      <h2>Aliases</h2>
+      {{ search_box('q_alias', '', 'Search variant / brand…') }}
+    </div>
     <p class="sub">Created automatically when you rename-consolidate a brand — future scans map
        these variants straight to the canonical name.</p>
     {% if alias_rows %}
