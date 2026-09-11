@@ -63,9 +63,13 @@ def crm_brands():
     finally:
         conn.close()
     row_region = {b["id"]: ", ".join(cgmap.get(b["country"] or "", [])) for b in rows}
+    region_countries = {}
+    for g in groups:
+        region_countries.setdefault(g["group_name"], []).append(g["country"])
     return render_template(
         "crm_brands.html", rows=rows, statuses=statuses, niches=niches, counts=counts,
         status_options=_status_options(statuses, _BRAND_STATUS_DEFAULTS),
+        region_countries=region_countries,
         f_status=f_status, f_niche=f_niche, q=q, sort=sort, scan=scraper.STATE,
         row_region=row_region, regions=regions, groups=groups,
     )

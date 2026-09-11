@@ -252,4 +252,83 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
 // option lists for the click-to-edit dropdowns (status is a select cell)
 window.__sheetOpts = { status: {{ status_options | tojson }} };
 </script>
+
+<script>
+// Link the Region and Country column filters: picking a region checks its
+// countries in the Country filter (a shortcut, not a separate filter of its
+// own -- the sheet component only knows about literal cell values). Manually
+// unchecking one of those countries means the user wants something other
+// than "the whole region," so the region checkbox clears back to unselected
+// while every other checked country is left exactly as it was.
+(function () {
+  const REGION_COUNTRIES = {{ region_countries | tojson }};
+
+  function setup() {
+    const table = document.querySelector('table[data-sheet]');
+    const filterRow = table && table.tHead && table.tHead.rows[1];
+    if (!filterRow) { setTimeout(setup, 50); return; }  // sheet not built yet
+
+    const heads = Array.from(table.tHead.rows[0].cells);
+    function panelFor(label) {
+      const idx = heads.findIndex(th => (th.firstChild ? th.firstChild.textContent : '').trim() === label);
+      const cell = idx > -1 ? filterRow.cells[idx] : null;
+      return cell ? cell.querySelector('.mfpanel') : null;
+    }
+    const countryPanel = panelFor('Country');
+    const regionPanel = panelFor('Region');
+    if (!countryPanel || !regionPanel) return;  // nothing to link
+
+    const countryBoxes = {}, regionBoxes = {};
+    countryPanel.querySelectorAll('input[type=checkbox]').forEach(cb => { countryBoxes[cb.value] = cb; });
+    regionPanel.querySelectorAll('input[type=checkbox]').forEach(cb => { regionBoxes[cb.value] = cb; });
+
+    let syncing = false;  // true while WE'RE the ones flipping checkboxes, so
+                          // those changes don't loop back through this logic
+                          // as if the user had clicked them
+
+    function setChecked(cb, checked) {
+      if (!cb || cb.checked === checked) return;
+      cb.checked = checked;
+      cb.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function selectedRegions() {
+      return Object.keys(regionBoxes).filter(r => regionBoxes[r].checked);
+    }
+
+    function countriesNeededBy(regionList) {
+      const need = new Set();
+      regionList.forEach(r => (REGION_COUNTRIES[r] || []).forEach(c => need.add(c)));
+      return need;
+    }
+
+    Object.keys(regionBoxes).forEach(region => {
+      regionBoxes[region].addEventListener('change', function () {
+        if (syncing) return;
+        syncing = true;
+        const needed = countriesNeededBy(selectedRegions());
+        (REGION_COUNTRIES[region] || []).forEach(country => {
+          setChecked(countryBoxes[country], needed.has(country));
+        });
+        syncing = false;
+      });
+    });
+
+    Object.keys(countryBoxes).forEach(country => {
+      countryBoxes[country].addEventListener('change', function () {
+        if (syncing || countryBoxes[country].checked) return;  // only care when manually UNchecked
+        syncing = true;
+        selectedRegions().forEach(region => {
+          if ((REGION_COUNTRIES[region] || []).includes(country)) {
+            setChecked(regionBoxes[region], false);
+          }
+        });
+        syncing = false;
+      });
+    });
+  }
+
+  setTimeout(setup, 0);  // run after base.html's own sheet-building script
+})();
+</script>
 {% endblock %}
