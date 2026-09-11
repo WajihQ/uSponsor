@@ -15,13 +15,12 @@ Usage: python scripts/transcript_review/build_description_batch.py [batch_size] 
 import csv
 import json
 import os
+import sqlite3
 import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
-
-from tracker import db  # noqa: E402 -- follows USPONSOR_DB / TURSO_DATABASE_URL, not a hardcoded path
 
 QUEUE_PATH = os.path.join(ROOT, "transcript_review_queue.csv")
 
@@ -42,7 +41,8 @@ def main():
         return
     batch = pending[:batch_size]
 
-    conn = db.connect()
+    conn = sqlite3.connect(os.path.join(ROOT, "sponsors.db"))
+    conn.row_factory = sqlite3.Row
 
     results = []
     for row in batch:

@@ -31,5 +31,4 @@ cookies.txt*
 .throttle_state.json
 .venv/
 venv/
-.venv312/
 .pytest_cache/

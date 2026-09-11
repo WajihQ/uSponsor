@@ -7,19 +7,18 @@ first and last emailed each lead plus a follow-up count.
 
 Auth: either `scripts/gmail/connect_gmail.py` (one browser consent per
 account, run from a terminal) or the Settings page's Connect/Reconnect
-links (build_auth_url/finish_oauth below — same client_secret.json, just
-driven through this app's own server instead of a throwaway one). Tokens
-are stored in the `gmail_tokens` DB table (not local files -- survives an
-ephemeral host's redeploys). The Google client libraries are imported
-lazily so the rest of the app runs without them.
+links (build_auth_url/finish_oauth below — same client_secret.json, same
+token files, just driven through this app's own server instead of a
+throwaway one). Tokens land in `gmail_tokens/<address>.json`. The Google
+client libraries are imported lazily so the rest of the app runs without
+them.
 
 Two sync modes:
   - full resync (authoritative): reads ALL sent mail across every account,
     aggregates, and overwrites the three contact fields with the true values.
     Run once after connecting; safe to re-run.
-  - incremental ("Sync now", or POST /cron/gmail-sync on a schedule): per
-    account, reads only mail newer than that account's saved watermark and
-    folds it in additively.
+  - incremental (interval + "Sync now"): per account, reads only mail newer
+    than that account's saved watermark and folds it in additively.
 """
 import datetime as dt
 import email.utils
@@ -31,6 +30,7 @@ from . import db
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.metadata"]
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TOKENS_DIR = os.path.join(_ROOT, "gmail_tokens")
 CLIENT_SECRET_PATH = os.path.join(_ROOT, "scripts", "gmail", "client_secret.json")
 _OAUTH_CALLBACK_PATH = "/crm/gmail/oauth/callback"
 
@@ -112,46 +112,24 @@ def reconcile(conn, agg, authoritative):
 # --- account / credential plumbing -----------------------------------------
 
 def list_accounts():
-    """Connected addresses, from the gmail_tokens table."""
-    conn = db.connect()
-    try:
-        return sorted(r["account"] for r in conn.execute("SELECT account FROM gmail_tokens"))
-    finally:
-        conn.close()
+    """Connected addresses, from token filenames in gmail_tokens/."""
+    if not os.path.isdir(TOKENS_DIR):
+        return []
+    return sorted(f[:-5] for f in os.listdir(TOKENS_DIR) if f.endswith(".json"))
 
 
-def _save_token_json(account, token_json):
-    conn = db.connect()
-    try:
-        conn.execute(
-            "INSERT INTO gmail_tokens (account, token_json, updated_at)"
-            " VALUES (?, ?, datetime('now'))"
-            " ON CONFLICT(account) DO UPDATE SET token_json = excluded.token_json,"
-            " updated_at = excluded.updated_at",
-            (account, token_json),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+def _token_path(account):
+    return os.path.join(TOKENS_DIR, account + ".json")
 
 
-def _creds(account):
-    import json
+def _creds(token_path):
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
-    conn = db.connect()
-    try:
-        row = conn.execute(
-            "SELECT token_json FROM gmail_tokens WHERE account = ?", (account,)
-        ).fetchone()
-    finally:
-        conn.close()
-    if not row:
-        raise RuntimeError(f"No Gmail token stored for {account} — reconnect it.")
-    creds = Credentials.from_authorized_user_info(json.loads(row["token_json"]), SCOPES)
+    creds = Credentials.from_authorized_user_file(token_path, SCOPES)
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
-        _save_token_json(account, creds.to_json())
+        with open(token_path, "w", encoding="utf-8") as f:
+            f.write(creds.to_json())
     return creds
 
 
@@ -161,13 +139,15 @@ def _service(creds):
 
 
 def _save_new_token(creds):
-    """Ask Gmail whose token this is, save it to the gmail_tokens table, and
+    """Ask Gmail whose token this is, write gmail_tokens/<address>.json, and
     return the address. Shared by connect_gmail.py (desktop flow) and
     build_auth_url/finish_oauth (in-app web flow) below — one place that
-    decides the storage format."""
+    decides the token filename and write format."""
     profile = _service(creds).users().getProfile(userId="me").execute()
     address = profile["emailAddress"]
-    _save_token_json(address, creds.to_json())
+    os.makedirs(TOKENS_DIR, exist_ok=True)
+    with open(_token_path(address), "w", encoding="utf-8") as f:
+        f.write(creds.to_json())
     return address
 
 
@@ -324,7 +304,7 @@ def sync(authoritative=False):
             for i, acct in enumerate(accounts):
                 STATE.update(current=acct, done=i)
                 try:
-                    svc = _service(_creds(acct))
+                    svc = _service(_creds(_token_path(acct)))
                     sends, newest = _collect_sends(
                         svc, 0, progress=lambda n, a=acct: STATE.update(message=f"{a}: {n} sent read"))
                 except Exception as e:
@@ -344,7 +324,7 @@ def sync(authoritative=False):
                 STATE.update(current=acct, done=i)
                 wm = _watermark(conn, acct)
                 try:
-                    svc = _service(_creds(acct))
+                    svc = _service(_creds(_token_path(acct)))
                     sends, newest = _collect_sends(
                         svc, wm, progress=lambda n, a=acct: STATE.update(message=f"{a}: {n} new read"))
                 except Exception as e:
@@ -376,6 +356,28 @@ def start_sync_in_background(authoritative=False):
     if STATE["running"]:
         return False
     threading.Thread(target=sync, kwargs={"authoritative": authoritative}, daemon=True).start()
+    return True
+
+
+def start_interval(minutes=30):
+    """Background heartbeat: incremental sync now, then every `minutes` while
+    the app runs. Runs immediately on start (not just after the first sleep)
+    since this app is typically run for short sessions shorter than the
+    interval — without an immediate run, a short session could see zero
+    automatic syncs and last_contacted would look stale until "Sync now" is
+    clicked by hand.
+    """
+    if not list_accounts():
+        return False
+
+    def _loop():
+        sync(authoritative=False)
+        while True:
+            time.sleep(minutes * 60)
+            if not STATE["running"]:
+                sync(authoritative=False)
+
+    threading.Thread(target=_loop, daemon=True).start()
     return True
 
 

@@ -9,12 +9,6 @@ DB_PATH = os.environ.get(
     "USPONSOR_DB", os.path.join(os.path.dirname(os.path.dirname(__file__)), "sponsors.db")
 )
 
-# Hosted DB (optional -- see SETUP_TURSO.md). When set, connect() returns an
-# embedded-replica libsql connection instead of plain local sqlite3: DB_PATH
-# becomes the local replica file (fast reads), writes/sync go to this URL.
-TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL")
-TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
-
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS channels (
     id          INTEGER PRIMARY KEY,
@@ -127,146 +121,13 @@ CREATE TABLE IF NOT EXISTS crm_sync (
     last_result TEXT                              -- short human-readable summary
 );
 
-CREATE TABLE IF NOT EXISTS app_config (
-    key   TEXT PRIMARY KEY,                       -- e.g. "cookies_txt", "throttle_state"
-    value TEXT                                    -- small singleton config values/blobs
-);
-
-CREATE TABLE IF NOT EXISTS gmail_tokens (
-    account    TEXT PRIMARY KEY,                  -- connected gmail address
-    token_json TEXT NOT NULL,                     -- OAuth Credentials, as authorized_user JSON
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
 CREATE INDEX IF NOT EXISTS idx_videos_channel ON videos(channel_ref);
 CREATE INDEX IF NOT EXISTS idx_videos_date ON videos(upload_date);
 CREATE INDEX IF NOT EXISTS idx_spons_brand ON sponsorships(brand_key);
 """
 
 
-class _Row:
-    """Mimics sqlite3.Row (name AND positional access, .keys()) for drivers
-    that return plain tuples -- confirmed via scripts/turso/diagnose_turso.py
-    that libsql's Python client does exactly that. Every route/template in
-    this app does `row["col"]` or Jinja's `row.col` (which falls back to
-    `row["col"]`), so without this, pages would silently render blank
-    instead of erroring."""
-    __slots__ = ("_cols", "_vals")
-
-    def __init__(self, cols, vals):
-        self._cols = cols
-        self._vals = vals
-
-    def __getitem__(self, key):
-        if isinstance(key, str):
-            return self._vals[self._cols.index(key)]
-        return self._vals[key]
-
-    def keys(self):
-        return list(self._cols)
-
-    def __iter__(self):
-        return iter(self._vals)
-
-    def __len__(self):
-        return len(self._vals)
-
-    def __repr__(self):
-        return f"<Row {dict(zip(self._cols, self._vals))}>"
-
-
-class _CompatCursor:
-    """Wraps a libsql cursor so fetchone/fetchall/iteration yield _Row
-    objects instead of libsql's native plain tuples. rowcount/lastrowid pass
-    through unchanged -- confirmed accurate on libsql via the same spike."""
-    __slots__ = ("_cur", "_cols")
-
-    def __init__(self, cur):
-        self._cur = cur
-        desc = cur.description
-        self._cols = tuple(d[0] for d in desc) if desc else ()
-
-    def _wrap(self, row):
-        return _Row(self._cols, row) if row is not None else None
-
-    def fetchone(self):
-        return self._wrap(self._cur.fetchone())
-
-    def fetchall(self):
-        return [self._wrap(r) for r in self._cur.fetchall()]
-
-    def __iter__(self):
-        # libsql's cursor doesn't support direct iteration (confirmed the
-        # hard way, not in the original spike) -- fetchall() does work, and
-        # every call site here already treats a fresh execute() result as a
-        # one-shot iterable, so materializing it up front is safe.
-        return iter([self._wrap(r) for r in self._cur.fetchall()])
-
-    @property
-    def rowcount(self):
-        return self._cur.rowcount
-
-    @property
-    def lastrowid(self):
-        return self._cur.lastrowid
-
-
-class _CompatConnection:
-    """Thin wrapper around a libsql embedded-replica connection so
-    conn.execute(...) returns row-name-addressable results, matching the
-    sqlite3.Row-based connection the rest of the app already expects.
-    executescript/executemany/with-block semantics were confirmed identical
-    to sqlite3 in the spike, so those just pass through."""
-    __slots__ = ("_conn",)
-
-    def __init__(self, conn):
-        self._conn = conn
-
-    def execute(self, sql, params=()):
-        return _CompatCursor(self._conn.execute(sql, params))
-
-    def executescript(self, sql):
-        return self._conn.executescript(sql)
-
-    def executemany(self, sql, seq):
-        return self._conn.executemany(sql, seq)
-
-    def commit(self):
-        self._conn.commit()
-
-    def close(self):
-        self._conn.close()
-
-    def __enter__(self):
-        self._conn.__enter__()
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return self._conn.__exit__(exc_type, exc, tb)
-
-
 def connect():
-    if TURSO_DATABASE_URL:
-        try:
-            import libsql
-        except ImportError:
-            raise RuntimeError(
-                "TURSO_DATABASE_URL is set but the libsql package isn't installed "
-                "-- run: pip install libsql (see SETUP_TURSO.md)"
-            )
-        conn = libsql.connect(
-            DB_PATH, sync_url=TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN,
-        )
-        # Reads hit the local replica file at sqlite speed; only sync() talks
-        # to Turso over the network. Every connect() syncs once so a request
-        # never sees stale data -- this app is single-user/low-traffic, so
-        # trading one network round trip per request for always-fresh reads
-        # is the right call over a background sync_interval (which would
-        # only help if connections were long-lived across requests, and
-        # they aren't -- every route does its own connect()/close()).
-        conn.sync()
-        conn.execute("PRAGMA foreign_keys = ON")
-        return _CompatConnection(conn)
     conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -275,19 +136,9 @@ def connect():
     return conn
 
 
-SCHEMA_VERSION = "1"  # bump whenever a migration check below is added/changed
-
-
 def init_db():
     with connect() as conn:
         conn.executescript(SCHEMA)
-        # The ~30 individual PRAGMA/ALTER checks below are instant on local
-        # SQLite but each one is a real network round trip over Turso --
-        # unguarded, that turned a Render cold boot into 2+ minutes and blew
-        # past gunicorn's worker-boot timeout. Once a DB is fully migrated,
-        # skip straight past all of it -- one cheap read instead of ~30 calls.
-        if get_config(conn, "schema_version") == SCHEMA_VERSION:
-            return
         # migrate databases created before newer channel columns existed
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(channels)")}
         if "status" not in cols:
@@ -345,7 +196,6 @@ def init_db():
             " ('http', 'https', 'www', 'link', 'checkout', 'thecheckout', 'cart', 'thecart')"
             " OR brand_key LIKE '%checkout'"
         )
-        set_config(conn, "schema_version", SCHEMA_VERSION)
 
 
 def add_channel(url, niche=None, subniche=None, agency=None):
@@ -523,24 +373,6 @@ def country_group_map(conn):
     for r in conn.execute("SELECT group_name, country FROM country_groups ORDER BY group_name"):
         m.setdefault(r["country"], []).append(r["group_name"])
     return m
-
-
-def get_config(conn, key, default=None):
-    """Read a small singleton value from app_config (cookies.txt content,
-    throttle state, quota cooldown, etc.) -- `default` if unset. This is
-    where local-disk state that needs to survive an ephemeral host's
-    redeploys lives instead."""
-    row = conn.execute("SELECT value FROM app_config WHERE key = ?", (key,)).fetchone()
-    return row["value"] if row else default
-
-
-def set_config(conn, key, value):
-    """Write/replace a value in app_config. Caller commits."""
-    conn.execute(
-        "INSERT INTO app_config (key, value) VALUES (?, ?)"
-        " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        (key, value),
-    )
 
 
 def apply_alias(brand, amap):

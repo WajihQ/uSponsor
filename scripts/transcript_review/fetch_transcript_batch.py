@@ -17,6 +17,7 @@ Usage:
 import json
 import os
 import re
+import sqlite3
 import sys
 import time
 
@@ -24,7 +25,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, ROOT)
 
 import supadata_transcript as supadata  # noqa: E402
-from tracker import db  # noqa: E402 -- follows USPONSOR_DB / TURSO_DATABASE_URL, not a hardcoded path
 
 QUEUE_PATH = os.path.join(ROOT, "transcript_review_queue.csv")
 KEYWORDS = re.compile(
@@ -129,10 +129,9 @@ def main():
         print("Nothing to fetch.")
         return
 
-    # Supadata's rate limit is per-account, not per-connection, and DB
-    # connections aren't thread-safe to share — give each worker its own
-    # (read-only lookups; cheap locally, one extra sync() round trip each
-    # on the Turso path).
+    # Supadata's rate limit is per-account, not per-connection, and
+    # sqlite3 connections aren't thread-safe to share — give each worker
+    # its own connection (they're all read-only lookups, cheap to open).
     import concurrent.futures as cf
 
     import threading
@@ -143,7 +142,8 @@ def main():
     lock = threading.Lock()
 
     def _worker(i, row):
-        conn = db.connect()
+        conn = sqlite3.connect(os.path.join(ROOT, "sponsors.db"))
+        conn.row_factory = sqlite3.Row
         try:
             return i, _fetch_one(conn, row)
         finally:
