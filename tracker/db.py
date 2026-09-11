@@ -275,9 +275,19 @@ def connect():
     return conn
 
 
+SCHEMA_VERSION = "1"  # bump whenever a migration check below is added/changed
+
+
 def init_db():
     with connect() as conn:
         conn.executescript(SCHEMA)
+        # The ~30 individual PRAGMA/ALTER checks below are instant on local
+        # SQLite but each one is a real network round trip over Turso --
+        # unguarded, that turned a Render cold boot into 2+ minutes and blew
+        # past gunicorn's worker-boot timeout. Once a DB is fully migrated,
+        # skip straight past all of it -- one cheap read instead of ~30 calls.
+        if get_config(conn, "schema_version") == SCHEMA_VERSION:
+            return
         # migrate databases created before newer channel columns existed
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(channels)")}
         if "status" not in cols:
@@ -335,6 +345,7 @@ def init_db():
             " ('http', 'https', 'www', 'link', 'checkout', 'thecheckout', 'cart', 'thecart')"
             " OR brand_key LIKE '%checkout'"
         )
+        set_config(conn, "schema_version", SCHEMA_VERSION)
 
 
 def add_channel(url, niche=None, subniche=None, agency=None):
