@@ -29,6 +29,7 @@ import concurrent.futures as cf
 import datetime as dt
 import json
 import os
+import tempfile
 import threading
 import time
 
@@ -84,30 +85,39 @@ class Throttled(Exception):
 
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_THROTTLE_STATE_FILE = os.path.join(_ROOT, ".throttle_state.json")
 
 _throttle_until = 0.0  # epoch seconds; 0 = not currently throttled
 
 
 def _load_throttle_state():
-    """Pick up a cooldown a *previous process* already started. Without this,
-    every fresh `python fetch_gap_batch.py` forgets the block ever happened
-    and immediately re-triggers it — exactly what kept extending the 2026-08
-    YouTube block across several back-to-back manual retries."""
+    """Pick up a cooldown a *previous process* already started — from the DB
+    (app_config), so it survives an ephemeral host's redeploys, not just a
+    previous process on the same machine. Without this, a fresh process
+    forgets the block ever happened and immediately re-triggers it — exactly
+    what kept extending the 2026-08 YouTube block across several back-to-back
+    manual retries."""
     global _throttle_until
     try:
-        with open(_THROTTLE_STATE_FILE, "r", encoding="utf-8") as f:
-            until = float(json.load(f).get("throttled_until") or 0)
+        conn = db.connect()
+        try:
+            raw = db.get_config(conn, "throttle_state")
+        finally:
+            conn.close()
+        until = float(json.loads(raw).get("throttled_until") or 0) if raw else 0
         _throttle_until = max(_throttle_until, until)
-    except (OSError, ValueError, TypeError):
-        pass
+    except Exception:
+        pass  # e.g. a brand-new DB with no app_config table yet — fine, just start clean
 
 
 def _save_throttle_state():
     try:
-        with open(_THROTTLE_STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump({"throttled_until": _throttle_until}, f)
-    except OSError:
+        conn = db.connect()
+        try:
+            db.set_config(conn, "throttle_state", json.dumps({"throttled_until": _throttle_until}))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
         pass
 
 
@@ -176,13 +186,47 @@ def _cookiefile_valid(path):
     return valid
 
 
+_DB_COOKIES_CACHE_PATH = os.path.join(tempfile.gettempdir(), "usponsor_cookies.txt")
+_db_cookies_materialized_for = None  # the app_config value last written to _DB_COOKIES_CACHE_PATH
+
+
+def _materialize_db_cookies():
+    """yt-dlp needs a real file path (cookiefile), it can't take cookie
+    content directly — so app_config['cookies_txt'] (the durable copy, set
+    by POST /scan/cookies) gets written out to a local temp file once per
+    process/whenever it changes, not once per video (that would mean a DB
+    round trip per fetch). Returns the temp path, or None if nothing's
+    stored in the DB either."""
+    global _db_cookies_materialized_for
+    try:
+        conn = db.connect()
+        try:
+            raw = db.get_config(conn, "cookies_txt")
+        finally:
+            conn.close()
+    except Exception:
+        return None
+    if not raw:
+        return None
+    if raw != _db_cookies_materialized_for:
+        with open(_DB_COOKIES_CACHE_PATH, "w", encoding="utf-8", newline="\n") as f:
+            f.write(raw)
+        _db_cookies_materialized_for = raw
+    return _DB_COOKIES_CACHE_PATH
+
+
 def _cookiefile_path():
-    """Which cookies.txt cookie_opts() would use, ignoring validity."""
+    """Which cookies.txt cookie_opts() would use, ignoring validity. Checks
+    local files first (USPONSOR_COOKIES_FILE, then a project-root cookies.txt
+    for local dev), then falls back to the DB-stored copy — the only source
+    once hosted, where local disk doesn't survive a redeploy."""
     f = os.environ.get("USPONSOR_COOKIES_FILE", "").strip()
     if f and os.path.isfile(f):
         return f
     default = os.path.join(_ROOT, "cookies.txt")
-    return default if os.path.isfile(default) else None
+    if os.path.isfile(default):
+        return default
+    return _materialize_db_cookies()
 
 
 def cookie_opts():

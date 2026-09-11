@@ -7,3 +7,5 @@ google-auth-oauthlib>=1.0
 google-auth-httplib2>=0.2
 # optional — only needed when TURSO_DATABASE_URL is set (hosted DB). See SETUP_TURSO.md
 libsql>=0.1.8
+# production WSGI server — hosted deployment only (Linux). See SETUP_HOSTING.md
+gunicorn>=23.0; platform_system != "Windows"

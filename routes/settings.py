@@ -1,4 +1,6 @@
 """Settings page + Gmail/Instantly sync trigger and status routes."""
+import os
+
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
 
 from app_core import app
@@ -71,6 +73,20 @@ def gmail_oauth_callback():
         return redirect(url_for("settings"))
     flash(f"Connected {address}.", "ok")
     return redirect(url_for("settings"))
+
+
+@app.route("/cron/gmail-sync", methods=["POST"])
+def cron_gmail_sync():
+    """For an external scheduler (GitHub Actions cron, cron-job.org, etc.) to
+    hit on an interval once hosted -- see SETUP_HOSTING.md. Replaces the old
+    in-process interval thread, which never ran under gunicorn anyway.
+    Runs synchronously (not backgrounded) so the caller gets a real
+    success/failure result, not just "started"."""
+    secret = os.environ.get("CRON_SECRET")
+    if not secret or request.headers.get("X-Cron-Secret") != secret:
+        return jsonify({"error": "unauthorized"}), 403
+    ok, msg = gmail_sync.sync(authoritative=False)
+    return jsonify({"ok": ok, "message": msg})
 
 
 @app.route("/crm/instantly/sync", methods=["POST"])

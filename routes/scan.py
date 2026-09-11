@@ -8,7 +8,7 @@ from flask import flash, jsonify, redirect, request, url_for
 
 from app_core import app
 from routes.helpers import _done
-from tracker import scraper
+from tracker import db, scraper
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -19,9 +19,18 @@ def scan_cookies_upload():
     if not f or not f.filename:
         flash("No cookies file selected.", "err")
         return redirect(request.referrer or url_for("crm_influencers"))
+    content = f.read()
     dest = os.path.join(_REPO_ROOT, "cookies.txt")
     with open(dest, "wb") as out:
-        out.write(f.read())
+        out.write(content)
+    # also persist to the DB -- the durable copy once hosted, where local
+    # disk doesn't survive a redeploy (see tracker/scraper.py::_cookiefile_path)
+    conn = db.connect()
+    try:
+        db.set_config(conn, "cookies_txt", content.decode("utf-8", errors="replace"))
+        conn.commit()
+    finally:
+        conn.close()
     flash("YouTube cookies saved — scans now run authenticated (much higher rate limits).", "ok")
     return redirect(request.referrer or url_for("crm_influencers"))
 
@@ -31,6 +40,12 @@ def scan_cookies_clear():
     dest = os.path.join(_REPO_ROOT, "cookies.txt")
     if os.path.isfile(dest):
         os.remove(dest)
+    conn = db.connect()
+    try:
+        conn.execute("DELETE FROM app_config WHERE key = 'cookies_txt'")
+        conn.commit()
+    finally:
+        conn.close()
     return _done("YouTube cookies removed.", endpoint="crm_influencers")
 
 

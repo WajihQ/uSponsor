@@ -21,6 +21,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from . import db
+
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG = os.path.join(_ROOT, "youtube_api.json")
 BASE = "https://www.googleapis.com/youtube/v3"
@@ -32,6 +34,39 @@ _quota_exhausted_until = 0.0  # epoch seconds; 0 = not on cooldown
 
 class QuotaExceeded(Exception):
     pass
+
+
+def _load_quota_cooldown():
+    """Pick up a cooldown a *previous process* already started — from the DB
+    (app_config), matching tracker/scraper.py's throttle-state pattern, so a
+    quota cooldown survives an ephemeral host's redeploys too, not just a
+    restart on the same machine."""
+    global _quota_exhausted_until
+    try:
+        conn = db.connect()
+        try:
+            raw = db.get_config(conn, "youtube_quota_exhausted_until")
+        finally:
+            conn.close()
+        if raw:
+            _quota_exhausted_until = max(_quota_exhausted_until, float(raw))
+    except Exception:
+        pass  # e.g. a brand-new DB with no app_config table yet — fine, just start clean
+
+
+def _save_quota_cooldown():
+    try:
+        conn = db.connect()
+        try:
+            db.set_config(conn, "youtube_quota_exhausted_until", str(_quota_exhausted_until))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
+_load_quota_cooldown()
 
 
 def api_key():
@@ -56,6 +91,7 @@ def quota_exhausted_until():
     global _quota_exhausted_until
     if _quota_exhausted_until and time.time() >= _quota_exhausted_until:
         _quota_exhausted_until = 0.0
+        _save_quota_cooldown()
     return _quota_exhausted_until or None
 
 
@@ -85,6 +121,7 @@ def _get(path, params, tries=3):
             if reason in ("quotaExceeded", "dailyLimitExceeded"):
                 global _quota_exhausted_until
                 _quota_exhausted_until = time.time() + QUOTA_COOLDOWN_HOURS * 3600
+                _save_quota_cooldown()
                 raise QuotaExceeded(reason) from exc
             if exc.code in (429, 500, 502, 503) and attempt < tries - 1:
                 time.sleep(delay)

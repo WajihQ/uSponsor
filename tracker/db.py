@@ -127,6 +127,17 @@ CREATE TABLE IF NOT EXISTS crm_sync (
     last_result TEXT                              -- short human-readable summary
 );
 
+CREATE TABLE IF NOT EXISTS app_config (
+    key   TEXT PRIMARY KEY,                       -- e.g. "cookies_txt", "throttle_state"
+    value TEXT                                    -- small singleton config values/blobs
+);
+
+CREATE TABLE IF NOT EXISTS gmail_tokens (
+    account    TEXT PRIMARY KEY,                  -- connected gmail address
+    token_json TEXT NOT NULL,                     -- OAuth Credentials, as authorized_user JSON
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_videos_channel ON videos(channel_ref);
 CREATE INDEX IF NOT EXISTS idx_videos_date ON videos(upload_date);
 CREATE INDEX IF NOT EXISTS idx_spons_brand ON sponsorships(brand_key);
@@ -501,6 +512,24 @@ def country_group_map(conn):
     for r in conn.execute("SELECT group_name, country FROM country_groups ORDER BY group_name"):
         m.setdefault(r["country"], []).append(r["group_name"])
     return m
+
+
+def get_config(conn, key, default=None):
+    """Read a small singleton value from app_config (cookies.txt content,
+    throttle state, quota cooldown, etc.) -- `default` if unset. This is
+    where local-disk state that needs to survive an ephemeral host's
+    redeploys lives instead."""
+    row = conn.execute("SELECT value FROM app_config WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_config(conn, key, value):
+    """Write/replace a value in app_config. Caller commits."""
+    conn.execute(
+        "INSERT INTO app_config (key, value) VALUES (?, ?)"
+        " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value),
+    )
 
 
 def apply_alias(brand, amap):
