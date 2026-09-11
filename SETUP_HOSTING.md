@@ -25,12 +25,21 @@ builds on top of that.
 1. Push this repo to GitHub (already done).
 2. On Render or Railway, create a new **Web Service** from the repo. Both
    read the `Procfile` (`web: gunicorn wsgi:app --workers 1 --bind
-   0.0.0.0:$PORT`) automatically.
+   0.0.0.0:$PORT --timeout 120`) automatically — if the platform's UI asks
+   for a Start Command explicitly instead of reading the Procfile, paste
+   that same line in.
 3. **Use exactly one worker** (already set in the `Procfile`) — the scan/
    Gmail/Instantly sync progress indicators (`STATE` dicts) are per-process,
    in-memory. With more than one worker, progress shown to you could belong
    to a different worker than the one actually running the job. Since this
    is a single-user tool, one worker is also all you need.
+4. **The `--timeout 120`** matters on first boot specifically: `db.init_db()`
+   runs at import time, and over Turso that's a real network round trip per
+   schema/migration check instead of an instant local file read — easily
+   past gunicorn's default 30s worker-boot timeout on a cold start, which
+   looks like a `WORKER TIMEOUT` / `SIGKILL` crash-loop in the logs. There's
+   no long-running per-request work in this app, so a generous boot
+   allowance costs nothing at runtime.
 4. Set these environment variables on the host:
    - `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` — from SETUP_TURSO.md.
    - `CRON_SECRET` — any long random string you generate yourself (e.g.
