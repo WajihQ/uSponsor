@@ -136,29 +136,108 @@ tbody.addrow .who input { display:block; margin-bottom:5px; }
 <div class="card">
   <h2>Country groups</h2>
   <p class="sub">Group countries together (e.g. <b>APAC</b> = China, Taiwan, Japan…) so leads roll up into a <b>Region</b> you can filter by above, matching how your Instantly campaigns are split. A country can belong to more than one group.</p>
-  <div class="groups-list">
+  <div class="groups-list" id="groupsList" data-delete-url="{{ url_for('crm_brand_groups_delete', gid=0) }}">
     {% for gname, members in groups|groupby('group_name') %}
-    <div class="group-row">
+    <div class="group-row" data-group="{{ gname }}">
       <b>{{ gname }}</b>
       {% for m in members %}
-      <span class="group-chip">{{ m.country }}
-        <form method="post" action="{{ url_for('crm_brand_groups_delete', gid=m.id) }}">
-          <button title="Remove {{ m.country }} from {{ gname }}">✕</button>
-        </form>
+      <span class="group-chip" data-id="{{ m.id }}">{{ m.country }}
+        <button type="button" class="chip-remove" data-id="{{ m.id }}" title="Remove {{ m.country }} from {{ gname }}">✕</button>
       </span>
       {% endfor %}
     </div>
     {% else %}
-    <p class="sub" style="margin:0">No groups yet — add your first country below.</p>
+    <p class="sub" id="noGroupsMsg" style="margin:0">No groups yet — add your first country below.</p>
     {% endfor %}
   </div>
-  <form method="post" action="{{ url_for('crm_brand_groups_add') }}" class="group-add">
-    <input name="group_name" placeholder="Group (e.g. APAC)" list="groupNames" required>
+  <form id="addGroupForm" action="{{ url_for('crm_brand_groups_add') }}" class="group-add">
+    <input name="group_name" id="groupNameInput" placeholder="Group (e.g. APAC)" list="groupNames" required>
     <datalist id="groupNames">{% for r in regions %}<option value="{{ r }}">{% endfor %}</datalist>
-    <input name="country" placeholder="Country (e.g. China)" required>
-    <button class="primary">+ Add to group</button>
+    <input name="country" id="groupCountryInput" placeholder="Country (e.g. China)" required>
+    <button type="submit" class="primary">+ Add to group</button>
   </form>
 </div>
+
+<script>
+(function () {
+  const list = document.getElementById('groupsList');
+  const form = document.getElementById('addGroupForm');
+  const nameInput = document.getElementById('groupNameInput');
+  const countryInput = document.getElementById('groupCountryInput');
+  const deleteUrlTemplate = list.dataset.deleteUrl;  // .../groups/0/delete -- swap the 0 for a real id
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function addChip(groupName, country, id) {
+    const noMsg = document.getElementById('noGroupsMsg');
+    if (noMsg) noMsg.remove();
+    let row = list.querySelector('.group-row[data-group="' + CSS.escape(groupName) + '"]');
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'group-row';
+      row.dataset.group = groupName;
+      row.innerHTML = '<b>' + esc(groupName) + '</b>';
+      list.appendChild(row);
+    }
+    const chip = document.createElement('span');
+    chip.className = 'group-chip';
+    chip.dataset.id = id;
+    chip.innerHTML = esc(country) + ' <button type="button" class="chip-remove" data-id="' + id +
+      '" title="Remove ' + esc(country) + ' from ' + esc(groupName) + '">✕</button>';
+    row.appendChild(chip);
+  }
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const groupName = nameInput.value.trim();
+    const country = countryInput.value.trim();
+    if (!groupName || !country) return;
+    const btn = form.querySelector('button');
+    btn.disabled = true;
+    try {
+      const res = await fetch(form.action, {
+        method: 'POST', body: new FormData(form),
+        headers: { 'X-Requested-With': 'fetch' },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to add.');
+      addChip(data.group_name, data.country, data.id);
+      // group name stays so adding several countries to the same group is
+      // fast -- only the country field clears, and stays focused
+      countryInput.value = '';
+      countryInput.focus();
+    } catch (err) {
+      alert('Could not add: ' + err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  list.addEventListener('click', async function (e) {
+    const btn = e.target.closest('.chip-remove');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    const chip = btn.closest('.group-chip');
+    const row = btn.closest('.group-row');
+    btn.disabled = true;
+    try {
+      await fetch(deleteUrlTemplate.replace(/\/0\/delete$/, '/' + id + '/delete'), {
+        method: 'POST', headers: { 'X-Requested-With': 'fetch' },
+      });
+      chip.remove();
+      if (row && !row.querySelector('.group-chip')) row.remove();
+      if (!list.querySelector('.group-row')) {
+        list.innerHTML = '<p class="sub" id="noGroupsMsg" style="margin:0">No groups yet — add your first country below.</p>';
+      }
+    } catch (err) {
+      btn.disabled = false;
+      alert('Could not remove: ' + err.message);
+    }
+  });
+})();
+</script>
 
 <div class="card">
   <h2>Import from your Google Sheet</h2>

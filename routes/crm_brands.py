@@ -1,5 +1,5 @@
 """Brand CRM — outreach tracking over the brand_leads table."""
-from flask import flash, redirect, render_template, request, url_for
+from flask import flash, jsonify, redirect, render_template, request, url_for
 
 from app_core import app
 from routes.helpers import _done, _status_options
@@ -75,7 +75,10 @@ def crm_brands():
 def crm_brand_groups_add():
     group_name = request.form.get("group_name", "").strip()[:80]
     country = request.form.get("country", "").strip()[:80]
+    is_fetch = request.headers.get("X-Requested-With") == "fetch"
     if not group_name or not country:
+        if is_fetch:
+            return jsonify({"error": "Give both a group name and a country."}), 400
         flash("Give both a group name and a country.", "err")
         return redirect(url_for("crm_brands"))
     conn = db.connect()
@@ -86,8 +89,16 @@ def crm_brand_groups_add():
             (group_name, country),
         )
         conn.commit()
+        row = conn.execute(
+            "SELECT id FROM country_groups WHERE group_name = ? AND country = ?",
+            (group_name, country),
+        ).fetchone()
     finally:
         conn.close()
+    if is_fetch:
+        # the page updates itself in place (a chip, not a reload) -- needs
+        # the row id and the (possibly re-cased-by-someone-else) names back
+        return jsonify({"id": row["id"], "group_name": group_name, "country": country})
     flash(f"Added {country} to {group_name}.", "ok")
     return redirect(url_for("crm_brands"))
 
@@ -100,7 +111,7 @@ def crm_brand_groups_delete(gid):
         conn.commit()
     finally:
         conn.close()
-    return redirect(url_for("crm_brands"))
+    return _done("Removed.", endpoint="crm_brands")
 
 
 @app.route("/crm/brands/import", methods=["POST"])
